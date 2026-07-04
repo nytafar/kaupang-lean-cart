@@ -85,16 +85,25 @@ export function addCartNormalizer( fn ) {
 	cartNormalizers.push( fn );
 }
 
+/* Store API strings arrive HTML-encoded (&#8217; etc.); the UI escapes on
+   render, so decode exactly once here or entities show up literally. */
+const entityDecoder = document.createElement( 'textarea' );
+function decodeEntities( s ) {
+	entityDecoder.innerHTML = s ?? '';
+	return entityDecoder.value;
+}
+
 /**
  * Normalize a raw Store API cart item into the lean-cart display model.
  */
 function normalizeItem( raw ) {
+	const name = decodeEntities( raw.name );
 	let item = {
 		key:            raw.key,
 		id:             raw.id,
 		type:           raw.type || 'simple',
-		title:          raw.name,
-		image:          raw.images?.[0] ? { src: raw.images[0].src, alt: raw.images[0].alt || raw.name } : null,
+		title:          name,
+		image:          raw.images?.[0] ? { src: raw.images[0].src, alt: raw.images[0].alt || name } : null,
 		quantity:       raw.quantity,
 		quantityLimits: raw.quantity_limits || { minimum: 1, maximum: 9999, multiple_of: 1 },
 		unitPrice:      formatPrice( parseInt( raw.prices?.price || 0, 10 ) ),
