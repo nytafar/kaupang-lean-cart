@@ -11,13 +11,16 @@
 /* ── Token mapping ─────────────────────────────────────────────── */
 
 .lean-cart {
-	--lc-text:       var(--text-color, hsl(26, 50%, 24%));
-	--lc-text-dark:  var(--text-color-dark, hsl(22, 56%, 13%));
-	--lc-text-muted: var(--text-color-muted, hsl(30, 30%, 32%));
-	--lc-bg:         var(--bg-color, #fff);
-	--lc-bg-light:   var(--bg-color-light, hsl(40, 70%, 94%));
-	--lc-border:     var(--border-color-light, hsl(38, 38%, 82%));
-	--lc-accent:     var(--accent-color, hsl(24, 60%, 23%));
+	/* Standalone fallbacks are neutral (currentColor washes, Canvas) —
+	   a skeleton must not smuggle a palette; the theme's tokens are the
+	   only source of color. */
+	--lc-text:       var(--text-color, currentColor);
+	--lc-text-dark:  var(--text-color-dark, currentColor);
+	--lc-text-muted: var(--text-color-muted, color-mix(in srgb, currentColor 65%, transparent));
+	--lc-bg:         var(--bg-color, Canvas);
+	--lc-bg-light:   var(--bg-color-light, color-mix(in srgb, currentColor 6%, transparent));
+	--lc-border:     var(--border-color-light, color-mix(in srgb, currentColor 30%, transparent));
+	--lc-accent:     var(--accent-color, currentColor);
 	--lc-radius:     var(--border-radius, 3px);
 	--lc-success:    hsl(145, 30%, 38%);
 
