@@ -53,8 +53,11 @@ function renderItem( item ) {
 		? `<dl class="cart-item-meta">${ item.metaRows.map( renderMetaRow ).join( '' ) }</dl>`
 		: '';
 
-	const badges = item.badges.length
-		? `<span class="cart-item-badges">${ item.badges.map( b => `<span class="cart-badge">${esc( b )}</span>` ).join( '' ) }</span>`
+	// Deduped: independent modules may mark the same fact (the WCS and
+	// APfS normalizers both badge a subscription item 'Abonnement').
+	const badgeLabels = [ ...new Set( item.badges ) ];
+	const badges = badgeLabels.length
+		? `<span class="cart-item-badges">${ badgeLabels.map( b => `<span class="cart-badge">${esc( b )}</span>` ).join( '' ) }</span>`
 		: '';
 
 	const subSummary = item.subscriptionSummary
