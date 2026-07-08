@@ -152,12 +152,22 @@ class Lean_Cart_Assets {
 		 *
 		 * @param array<string,string> $imports Bare-URL => versioned-URL map.
 		 */
-		$imports = apply_filters( 'lean_cart_importmap_imports', [
+		$defaults = [
 			$base . 'cart-store.js' => $base . 'cart-store.js?ver=' . $v,
 			$base . 'cart-api.js'   => $base . 'cart-api.js?ver=' . $v,
 			$base . 'cart-ui.js'    => $base . 'cart-ui.js?ver=' . $v,
 			$base . 'cart-add.js'   => $base . 'cart-add.js?ver=' . $v,
-		] );
+		];
+
+		// Extension modules load via dynamic import from cart-init; without
+		// map entries their URLs carry no version and edits never bust the
+		// browser cache.
+		foreach ( glob( LEAN_CART_PATH . 'assets/js/modules/*.js' ) as $module ) {
+			$name = 'modules/' . basename( $module );
+			$defaults[ $base . $name ] = $base . $name . '?ver=' . $v;
+		}
+
+		$imports = apply_filters( 'lean_cart_importmap_imports', $defaults );
 
 		echo '<script type="importmap">' . wp_json_encode( [ 'imports' => $imports ] ) . '</script>' . "\n";
 	}
