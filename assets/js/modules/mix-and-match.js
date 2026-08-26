@@ -57,17 +57,20 @@ export function init( store ) {
 		return item;
 	} );
 
-	// Phase 2: After a cart:updated event, restructure items
-	// to nest children under parents. This runs on the
-	// already-normalized state.
-	document.addEventListener( 'lean-cart:updated', ( e ) => {
-		const state = e.detail.state;
-		if ( ! state || ! state.items ) return;
-
+	// Phase 2: Nest children under their parent containers.
+	//
+	// This runs as a cart normalizer, not a `lean-cart:updated`
+	// listener: normalizers execute inside normalizeCart(), before
+	// the store commits and emits the event, so the restructured
+	// (nested) shape is already in place when the renderer runs. A
+	// post-commit event listener would race the renderer — the UI
+	// subscribes to lean-cart:updated first (and the MnM module is
+	// loaded via async import, so its listener would register even
+	// later), leaving children unrendered until a subsequent commit.
+	store.addCartNormalizer( ( cart ) => {
 		const containers = new Map();
-		const orphans = [];
 
-		for ( const item of state.items ) {
+		for ( const item of cart.items ) {
 			if ( item.childKeys ) {
 				item.children = [];
 				containers.set( item.key, item );
@@ -75,11 +78,11 @@ export function init( store ) {
 		}
 
 		// Nothing to restructure if no MnM containers.
-		if ( containers.size === 0 ) return;
+		if ( containers.size === 0 ) return cart;
 
 		const restructured = [];
 
-		for ( const item of state.items ) {
+		for ( const item of cart.items ) {
 			if ( item.isChild && item.parentKey && containers.has( item.parentKey ) ) {
 				containers.get( item.parentKey ).children.push( item );
 			} else {
@@ -87,6 +90,7 @@ export function init( store ) {
 			}
 		}
 
-		state.items = restructured;
+		cart.items = restructured;
+		return cart;
 	} );
 }
