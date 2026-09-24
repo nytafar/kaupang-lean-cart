@@ -178,21 +178,7 @@ function render( state ) {
 		el.innerHTML = hasItems ? renderTotals( state ) : '';
 	} );
 
-	// Count badges
-	mountPoints.count.forEach( el => {
-		el.textContent = state.itemCount;
-	} );
-
-	// Labels
-	const label = `${ state.itemCount }\u00a0${ state.itemCount === 1 ? i18n.item : i18n.items }`;
-	mountPoints.label.forEach( el => {
-		el.textContent = label;
-	} );
-
-	// Empty state
-	mountPoints.empty.forEach( el => {
-		el.hidden = hasItems;
-	} );
+	paintCount( state.itemCount );
 
 	// Loading state
 	mountPoints.loading.forEach( el => {
@@ -202,6 +188,27 @@ function render( state ) {
 	// Checkout URLs
 	mountPoints.checkoutUrl.forEach( el => {
 		el.href = config.checkoutUrl;
+	} );
+}
+
+/**
+ * Paint the count-derived mount points: count badges (hidden at zero — zero is
+ * not a count), labels and the empty state. Exported so boot can paint a
+ * cached count before the cart has been fetched.
+ */
+export function paintCount( count ) {
+	mountPoints.count.forEach( el => {
+		el.textContent = count;
+		el.hidden = count === 0;
+	} );
+
+	const label = `${ count }\u00a0${ count === 1 ? i18n.item : i18n.items }`;
+	mountPoints.label.forEach( el => {
+		el.textContent = label;
+	} );
+
+	mountPoints.empty.forEach( el => {
+		el.hidden = count > 0;
 	} );
 }
 

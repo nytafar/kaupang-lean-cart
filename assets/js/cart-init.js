@@ -17,10 +17,63 @@ const config = window.leanCartConfig;
 ui.init();
 add.init();
 
-// ── 2. Cold-fetch guard ─────────────────────────────────────────
+// ── 2. Instant count + cold-fetch guard ─────────────────────────
 //
-// Only fetch the cart if WooCommerce has set a session cookie.
-// This avoids a round-trip on first visit for new users.
+// The page HTML is cart-agnostic (it may come from a shared page cache),
+// so count mount points start empty. A { hash, count } snapshot in
+// localStorage paints the count before the network fetch. It is only
+// trusted while its hash equals the woocommerce_cart_hash cookie, which
+// WooCommerce rewrites on every cart change and deletes when the cart
+// empties (order placed, logout, session expiry) — so a stale count
+// never paints. The Store API fetch then reconciles.
+//
+// The fetch itself only runs if WooCommerce has set a cart cookie,
+// avoiding a round-trip on first visit for new users.
+
+const SNAPSHOT_KEY = 'leanCart';
+
+function cookie( name ) {
+	return document.cookie.match( new RegExp( '(?:^|; )' + name + '=([^;]*)' ) )?.[ 1 ] || '';
+}
+
+function readSnapshot() {
+	try {
+		return JSON.parse( localStorage.getItem( SNAPSHOT_KEY ) );
+	} catch {
+		return null; // Storage disabled or corrupt — just wait for the fetch.
+	}
+}
+
+function writeSnapshot( count ) {
+	try {
+		const hash = cookie( 'woocommerce_cart_hash' );
+		if ( hash && count ) {
+			localStorage.setItem( SNAPSHOT_KEY, JSON.stringify( { hash, count } ) );
+		} else {
+			localStorage.removeItem( SNAPSHOT_KEY );
+		}
+	} catch {}
+}
+
+const cached = readSnapshot();
+const cartHash = cookie( 'woocommerce_cart_hash' );
+
+if ( cached && cached.hash === cartHash ) {
+	ui.paintCount( cached.count );
+} else if ( cached ) {
+	writeSnapshot( 0 );
+}
+
+document.addEventListener( 'lean-cart:updated', ( e ) => {
+	writeSnapshot( e.detail.state.itemCount );
+} );
+
+// Another tab changed the cart — refetch so items and count follow.
+window.addEventListener( 'storage', ( e ) => {
+	if ( e.key === SNAPSHOT_KEY ) {
+		store.fetchCart();
+	}
+} );
 
 const hasSession =
 	document.cookie.includes( 'wp_woocommerce_session' ) ||

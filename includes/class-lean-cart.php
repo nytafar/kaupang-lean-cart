@@ -36,9 +36,11 @@ final class Lean_Cart {
 	private function load_core(): void {
 		require_once LEAN_CART_PATH . 'includes/class-lean-cart-assets.php';
 		require_once LEAN_CART_PATH . 'includes/class-lean-cart-hooks.php';
+		require_once LEAN_CART_PATH . 'includes/class-lean-cart-notices.php';
 
 		new Lean_Cart_Assets();
 		new Lean_Cart_Hooks();
+		new Lean_Cart_Notices();
 	}
 
 	/**
