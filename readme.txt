@@ -85,6 +85,71 @@ The plugin emits a `lean-cart:open` event when an item is added. If your theme e
 
 No configuration page. No settings screen. It works on activation.
 
+== Usage ==
+
+= Disabling the default stylesheet =
+
+    add_filter( 'lean_cart_disable_styles', '__return_true' );
+
+= Customizing i18n strings =
+
+    add_filter( 'lean_cart_i18n', function( $strings ) {
+        $strings['emptyCart'] = __( 'Nothing here yet!', 'my-theme' );
+        return $strings;
+    } );
+
+= Extending the config object =
+
+    add_filter( 'lean_cart_config', function( $config ) {
+        $config['myCustomKey'] = 'value';
+        return $config;
+    } );
+
+= Adding a custom module =
+
+**PHP** (`includes/modules/class-my-plugin.php`):
+
+    class Lean_Cart_My_Plugin {
+        public function __construct() {
+            add_filter( 'lean_cart_config', [ $this, 'extend_config' ] );
+        }
+
+        public function extend_config( array $config ): array {
+            $config['modules']['myPlugin'] = true;
+            return $config;
+        }
+    }
+
+**JS** (`assets/js/modules/my-plugin.js`):
+
+    export function init( store ) {
+        store.addNormalizer( ( item, raw ) => {
+            // Enrich items based on Store API extension data.
+            return item;
+        } );
+
+        store.addFormExtractor( ( form ) => {
+            // Return extra fields for the add-to-cart API call.
+            return null;
+        } );
+    }
+
+= Full-page caching =
+
+Lean Cart is built so every page can be served from a shared page cache, cart or no cart:
+
+- **Cart-agnostic HTML.** Render `[data-lean-cart]` mount points in their empty state (count `0` with `hidden`, empty state visible). Count mounts are hidden at zero and shown by Lean Cart.
+- **Instant count.** A `{ hash, count }` snapshot in `localStorage` paints the count before the Store API fetch. It is only used while its hash matches the `woocommerce_cart_hash` cookie, so a count never outlives the cart it came from (order placed, logout, session expiry, a change made elsewhere).
+- **Notices.** On GET requests outside cart, checkout and account, WooCommerce notices print inside `<noscript>`: no-JS visitors still see them, JS visitors get Lean Cart's own feedback. While session notices are pending, an `lc_notice` cookie is set. Configure your page cache to bypass entirely (no read, no store) when it is present.
+
+    // Print notices normally on more pages.
+    add_filter( 'lean_cart_live_notices', fn( $live ) => $live || is_page( 'contact' ) );
+
+    // Rename the pending-notice cookie.
+    add_filter( 'lean_cart_notice_cookie', fn() => 'my_notice' );
+
+Self-check: `wp eval-file wp-content/plugins/woocommerce-lean-cart/tools/check-notices.php`
+
 == Frequently Asked Questions ==
 
 = Does this replace the WooCommerce cart page? =
