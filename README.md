@@ -181,25 +181,29 @@ Self-check: `wp eval-file wp-content/plugins/woocommerce-lean-cart/tools/check-n
 
 ## FAQ
 
-**Does this replace the WooCommerce cart page?**
+### Does this replace the WooCommerce cart page?
 
 No. Lean Cart replaces the cart *fragments* system and the add-to-cart AJAX flow. The `/cart/` page still works — Lean Cart operates alongside it, powering drawers, mini-carts, and any custom mount point.
 
-**Does it work with WooCommerce Blocks?**
+### Does it work with WooCommerce Blocks?
 
 Lean Cart targets the same Store API that Blocks uses. They can coexist, but Lean Cart is designed for themes that want full control over cart markup rather than using the Cart Block.
 
-**What happens if JavaScript is disabled?**
+### What happens if JavaScript is disabled?
 
 Forms fall through to their native POST behavior. The standard WooCommerce add-to-cart flow takes over and the `/cart/` page works as usual.
 
-**Can I use this without any CSS?**
+### Can I use this without any CSS?
 
 Yes. Either dequeue the stylesheet with `lean_cart_disable_styles` or simply don't add the `.lean-cart` wrapper class and write your own styles targeting `[data-lean-cart]` attributes.
 
-**How do I add support for another WooCommerce extension?**
+### How do I add support for another WooCommerce extension?
 
 Create a PHP module class in `includes/modules/` that hooks into `lean_cart_config`, and a JS module in `assets/js/modules/` that registers normalizers and/or form extractors. Gate the PHP module on `class_exists()` in `Lean_Cart::load_modules()`. See the Subscriptions or Mix and Match modules for reference.
+
+## Screenshots
+
+No screenshots. Lean Cart is a headless cart layer with no admin interface — all visual output is controlled by your theme.
 
 ## Changelog
 
@@ -207,10 +211,9 @@ See [CHANGELOG.md](CHANGELOG.md).
 
 ## Releasing
 
-The header `Version:` in `woocommerce-lean-cart.php` is the single source of truth; `tools/pre-commit` (suite kit v1) syncs it into
-`LEAN_CART_VERSION`, `readme.meta.json` and `readme.txt`, and regenerates `readme.txt`. Enable once per checkout: `git config core.hooksPath tools`.
-To release: bump the header, rename `## [Unreleased]` in CHANGELOG.md to `## [x.y.z] - YYYY-MM-DD`, commit, tag `vx.y.z`.
-Full procedure: [docs/kit/README.md](../docs/kit/README.md).
+Suite kit v2 (<https://github.com/nytafar/kaupang-docs/tree/main/kit>): the header `Version:` is the single source; `readme.txt` is generated — never edit it.
+Every change adds a line under `## [Unreleased]` in CHANGELOG.md.
+Release: `sudo -u myrvann tools/release patch|minor|major [--push]` (bumps, dates the changelog, commits, tags `vx.y.z`).
 
 ## License
 

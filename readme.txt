@@ -1,12 +1,11 @@
 === WooCommerce Lean Cart ===
 Contributors: lassejellum
-Author URI: https://jellum.net
 Tags: woocommerce, store-api, cart, mini-cart, developer-friendly
 Requires at least: 6.0
-Tested up to: 6.8
+Tested up to: 7.1
 Requires PHP: 8.0
 Stable tag: 0.1.0
-License: GPLv2 or later
+License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 A modern, performant, and themable WooCommerce cart built on the Store API. Replaces legacy cart fragments with vanilla JS, ES modules, and events.
@@ -59,7 +58,7 @@ Lean Cart doesn't render a drawer, panel, or page. It hydrates mount points your
       <div data-lean-cart="error" hidden></div>
       <a data-lean-cart="checkout-url" href="#">Checkout</a>
     </div>
-    
+
     <!-- Badge on a menu icon -->
     <span data-lean-cart="count">0</span>
     <span data-lean-cart="label">0 items</span>
@@ -86,86 +85,26 @@ The plugin emits a `lean-cart:open` event when an item is added. If your theme e
 
 No configuration page. No settings screen. It works on activation.
 
-== Usage ==
-
-= Disabling the default stylesheet =
-
-    add_filter( 'lean_cart_disable_styles', '__return_true' );
-
-= Customizing i18n strings =
-
-    add_filter( 'lean_cart_i18n', function( $strings ) {
-        $strings['emptyCart'] = __( 'Nothing here yet!', 'my-theme' );
-        return $strings;
-    } );
-
-= Extending the config object =
-
-    add_filter( 'lean_cart_config', function( $config ) {
-        $config['myCustomKey'] = 'value';
-        return $config;
-    } );
-
-= Adding a custom module =
-
-**PHP** (`includes/modules/class-my-plugin.php`):
-
-    class Lean_Cart_My_Plugin {
-        public function __construct() {
-            add_filter( 'lean_cart_config', [ $this, 'extend_config' ] );
-        }
-    
-        public function extend_config( array $config ): array {
-            $config['modules']['myPlugin'] = true;
-            return $config;
-        }
-    }
-
-**JS** (`assets/js/modules/my-plugin.js`):
-
-    export function init( store ) {
-        store.addNormalizer( ( item, raw ) => {
-            // Enrich items based on Store API extension data.
-            return item;
-        } );
-    
-        store.addFormExtractor( ( form ) => {
-            // Return extra fields for the add-to-cart API call.
-            return null;
-        } );
-    }
-
-= Full-page caching =
-
-Lean Cart is built so every page can be served from a shared page cache, cart or no cart:
-
-- **Cart-agnostic HTML.** Render `[data-lean-cart]` mount points in their empty state (count `0` with `hidden`, empty state visible). Count mounts are hidden at zero and shown by Lean Cart.
-- **Instant count.** A `{ hash, count }` snapshot in `localStorage` paints the count before the Store API fetch. It is only used while its hash matches the `woocommerce_cart_hash` cookie, so a count never outlives the cart it came from (order placed, logout, session expiry, a change made elsewhere).
-- **Notices.** On GET requests outside cart, checkout and account, WooCommerce notices print inside `<noscript>`: no-JS visitors still see them, JS visitors get Lean Cart's own feedback. While session notices are pending, an `lc_notice` cookie is set. Configure your page cache to bypass entirely (no read, no store) when it is present.
-
-    // Print notices normally on more pages.
-    add_filter( 'lean_cart_live_notices', fn( $live ) => $live || is_page( 'contact' ) );
-    
-    // Rename the pending-notice cookie.
-    add_filter( 'lean_cart_notice_cookie', fn() => 'my_notice' );
-
-Self-check: `wp eval-file wp-content/plugins/woocommerce-lean-cart/tools/check-notices.php`
-
 == Frequently Asked Questions ==
 
 = Does this replace the WooCommerce cart page? =
+
 No. Lean Cart replaces the cart *fragments* system and the add-to-cart AJAX flow. The `/cart/` page still works — Lean Cart operates alongside it, powering drawers, mini-carts, and any custom mount point.
 
 = Does it work with WooCommerce Blocks? =
+
 Lean Cart targets the same Store API that Blocks uses. They can coexist, but Lean Cart is designed for themes that want full control over cart markup rather than using the Cart Block.
 
 = What happens if JavaScript is disabled? =
+
 Forms fall through to their native POST behavior. The standard WooCommerce add-to-cart flow takes over and the `/cart/` page works as usual.
 
 = Can I use this without any CSS? =
+
 Yes. Either dequeue the stylesheet with `lean_cart_disable_styles` or simply don't add the `.lean-cart` wrapper class and write your own styles targeting `[data-lean-cart]` attributes.
 
 = How do I add support for another WooCommerce extension? =
+
 Create a PHP module class in `includes/modules/` that hooks into `lean_cart_config`, and a JS module in `assets/js/modules/` that registers normalizers and/or form extractors. Gate the PHP module on `class_exists()` in `Lean_Cart::load_modules()`. See the Subscriptions or Mix and Match modules for reference.
 
 == Screenshots ==
@@ -174,7 +113,7 @@ No screenshots. Lean Cart is a headless cart layer with no admin interface — a
 
 == Changelog ==
 
-= 0.1.0 =
+= 0.1.0 – 2026-04-14 =
 
 * Initial release.
 * Store API cart state layer with optimistic updates and rollback.

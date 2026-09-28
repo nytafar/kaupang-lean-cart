@@ -1,13 +1,5 @@
 {
-  "pluginName": "WooCommerce Lean Cart",
   "contributors": ["lassejellum"],
-  "authorURI": "https://jellum.net",
   "tags": ["woocommerce", "store-api", "cart", "mini-cart", "developer-friendly"],
-  "requiresAtLeast": "6.0",
-  "testedUpTo": "6.8",
-  "requiresPHP": "8.0",
-  "stableTag": "0.1.0",
-  "license": "GPLv2 or later",
-  "licenseUri": "https://www.gnu.org/licenses/gpl-2.0.html",
   "shortDescription": "A modern, performant, and themable WooCommerce cart built on the Store API. Replaces legacy cart fragments with vanilla JS, ES modules, and events."
 }
