@@ -5,7 +5,7 @@
  *
  * Usage: php tools/generate-readme.php
  *
- * Reads README.md as the canonical source and readme.meta.json for WP metadata.
+ * Reads README.md as the canonical source, CHANGELOG.md for the changelog and readme.meta.json for WP metadata.
  * Outputs a simplified readme.txt that passes the WordPress.org validator.
  *
  * This script is run automatically by the pre-commit hook.
@@ -78,10 +78,12 @@ function convert_faq( string $text ): string {
 }
 
 /**
- * Convert changelog from markdown ### headings to WP = heading = format.
+ * Convert CHANGELOG.md (Keep a Changelog) to WP readme format: drop [Unreleased], ## [x.y.z] - date -> = x.y.z =.
  */
 function convert_changelog( string $text ): string {
-	$text = preg_replace( '/^###\s+(.+)$/m', '= $1 =', $text );
+	$text = preg_replace( '/^## \[Unreleased\].*?(?=^## |\z)/ms', '', $text );
+	$text = preg_replace( '/^## \[([^\]]+)\].*$/m', '= $1 =', $text );
+	$text = preg_replace( '/^### (.+)$/m', '$1:', $text );
 	$text = preg_replace( '/^- /m', '* ', $text );
 	return $text;
 }
@@ -147,13 +149,14 @@ $out[] = '== Screenshots ==';
 $out[] = '';
 $out[] = 'No screenshots. Lean Cart is a headless cart layer with no admin interface — all visual output is controlled by your theme.';
 
-// Changelog.
-$changelog = section( $md, 'Changelog' );
+// Changelog: CHANGELOG.md (Keep a Changelog) from the first version section on.
+$changelog = is_file( $root . '/CHANGELOG.md' ) ? convert_changelog( (string) file_get_contents( $root . '/CHANGELOG.md' ) ) : '';
+$changelog = preg_match( '/^= .*/ms', $changelog, $cm ) ? trim( $cm[0] ) : '';
 if ( $changelog ) {
 	$out[] = '';
 	$out[] = '== Changelog ==';
 	$out[] = '';
-	$out[] = strip_github( convert_changelog( $changelog ) );
+	$out[] = strip_github( $changelog );
 }
 
 $result = implode( "\n", $out ) . "\n";

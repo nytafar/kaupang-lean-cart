@@ -203,24 +203,14 @@ Create a PHP module class in `includes/modules/` that hooks into `lean_cart_conf
 
 ## Changelog
 
-### 0.1.0
+See [CHANGELOG.md](CHANGELOG.md).
 
-- Initial release.
-- Store API cart state layer with optimistic updates and rollback.
-- Native ES module architecture with import map cache busting.
-- Skeleton CSS with CSS custom property token mapping.
-- Cold-fetch guard — zero cart overhead for new visitors.
-- Legacy cart fragments disabled automatically.
-- Form interception for simple, variable, grouped, and subscription products.
-- Loop/widget link interception for archive pages.
-- Module: WooCommerce Subscriptions — billing summaries, badges, meta rows.
-- Module: Mix and Match Products — `mnm_config` form extraction, parent-child nesting, server-side validation guard.
-- Module: All Products for Subscriptions — Store API extension, purchase mode display.
-- Event-driven theme integration via `lean-cart:*` custom events.
-- Public JS API (`window.leanCart`).
-- `data-lean-cart` attribute-based mount point system.
-- Delegated click handler for cart actions (`data-cart-action`).
-- Bridge to `window.numenu` navigation system.
+## Releasing
+
+The header `Version:` in `woocommerce-lean-cart.php` is the single source of truth; `tools/pre-commit` (suite kit v1) syncs it into
+`LEAN_CART_VERSION`, `readme.meta.json` and `readme.txt`, and regenerates `readme.txt`. Enable once per checkout: `git config core.hooksPath tools`.
+To release: bump the header, rename `## [Unreleased]` in CHANGELOG.md to `## [x.y.z] - YYYY-MM-DD`, commit, tag `vx.y.z`.
+Full procedure: [docs/kit/README.md](../docs/kit/README.md).
 
 ## License
 
