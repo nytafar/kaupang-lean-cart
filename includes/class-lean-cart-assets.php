@@ -22,7 +22,7 @@ class Lean_Cart_Assets {
 	}
 
 	private function compute_js_ver(): string {
-		$js_dir = LEAN_CART_PATH . 'assets/js/';
+		$js_dir = KAUPANG_LEAN_CART_PATH . 'assets/js/';
 		$ver = 0;
 		foreach ( glob( $js_dir . '*.js' ) as $f ) {
 			$ver = max( $ver, filemtime( $f ) );
@@ -30,7 +30,7 @@ class Lean_Cart_Assets {
 		foreach ( glob( $js_dir . 'modules/*.js' ) as $f ) {
 			$ver = max( $ver, filemtime( $f ) );
 		}
-		return (string) ( $ver ?: LEAN_CART_VERSION );
+		return (string) ( $ver ?: KAUPANG_LEAN_CART_VERSION );
 	}
 
 	public function enqueue(): void {
@@ -40,31 +40,31 @@ class Lean_Cart_Assets {
 
 	private function enqueue_styles(): void {
 		/**
-		 * Filter: lean_cart_disable_styles
+		 * Filter: kaupang/lean-cart/disable_styles
 		 *
 		 * Return true to prevent the plugin from enqueuing its CSS.
 		 * Useful when the theme provides its own cart styles.
 		 *
 		 * @param bool $disable Default false.
 		 */
-		if ( apply_filters( 'lean_cart_disable_styles', false ) ) {
+		if ( apply_filters( 'kaupang/lean-cart/disable_styles', false ) ) {
 			return;
 		}
 
-		$css_file = LEAN_CART_PATH . 'assets/css/lean-cart.css';
+		$css_file = KAUPANG_LEAN_CART_PATH . 'assets/css/lean-cart.css';
 
 		wp_enqueue_style(
-			'lean-cart-styles',
-			LEAN_CART_URL . 'assets/css/lean-cart.css',
+			'kaupang-lean-cart-styles',
+			KAUPANG_LEAN_CART_URL . 'assets/css/lean-cart.css',
 			[],
-			file_exists( $css_file ) ? filemtime( $css_file ) : LEAN_CART_VERSION
+			file_exists( $css_file ) ? filemtime( $css_file ) : KAUPANG_LEAN_CART_VERSION
 		);
 	}
 
 	private function enqueue_scripts(): void {
 		wp_enqueue_script(
-			'lean-cart-init',
-			LEAN_CART_URL . 'assets/js/cart-init.js',
+			'kaupang-lean-cart-init',
+			KAUPANG_LEAN_CART_URL . 'assets/js/cart-init.js',
 			[],
 			$this->js_ver,
 			[ 'strategy' => 'defer', 'in_footer' => true ]
@@ -73,18 +73,18 @@ class Lean_Cart_Assets {
 		$config = $this->build_config();
 
 		wp_add_inline_script(
-			'lean-cart-init',
+			'kaupang-lean-cart-init',
 			'window.leanCartConfig = ' . wp_json_encode( $config ) . ';',
 			'before'
 		);
 
 		/**
-		 * Action: lean_cart_enqueue_scripts
+		 * Action: kaupang/lean-cart/enqueue_scripts
 		 *
 		 * Fires after lean cart scripts are enqueued.
 		 * Use this to enqueue additional scripts that depend on the cart.
 		 */
-		do_action( 'lean_cart_enqueue_scripts' );
+		do_action( 'kaupang/lean-cart/enqueue_scripts' );
 	}
 
 	private function build_config(): array {
@@ -101,35 +101,35 @@ class Lean_Cart_Assets {
 				'minorUnit' => wc_get_price_decimals(),
 				'locale'    => str_replace( '_', '-', get_locale() ),
 			],
-			'showVariationLabels' => apply_filters( 'lean_cart_show_variation_labels', false ),
+			'showVariationLabels' => apply_filters( 'kaupang/lean-cart/show_variation_labels', false ),
 			'modules'      => [
 				'subscriptions'        => class_exists( 'WC_Subscriptions' ),
 				'mixAndMatch'          => class_exists( 'WC_Mix_and_Match' ),
 				'allProductsSubs'      => class_exists( 'WCS_ATT' ),
 				'subliumSubscriptions' => class_exists( '\Sublium_WCS\Plugin' ) || function_exists( 'sublium_init' ),
 			],
-			'i18n'         => apply_filters( 'lean_cart_i18n', [
-				'emptyCart'    => __( 'Handlekurven er tom', 'lean-cart' ),
-				'item'         => __( 'vare', 'lean-cart' ),
-				'items'        => __( 'varer', 'lean-cart' ),
-				'remove'       => __( 'Fjern', 'lean-cart' ),
-				'subtotal'     => __( 'Delsum', 'lean-cart' ),
-				'total'        => __( 'Totalt', 'lean-cart' ),
-				'shipping'     => __( 'Frakt', 'lean-cart' ),
-				'freeShipping' => __( 'Gratis', 'lean-cart' ),
-				'updateError'  => __( 'Kunne ikke oppdatere', 'lean-cart' ),
+			'i18n'         => apply_filters( 'kaupang/lean-cart/i18n', [
+				'emptyCart'    => __( 'Handlekurven er tom', 'kaupang-lean-cart' ),
+				'item'         => __( 'vare', 'kaupang-lean-cart' ),
+				'items'        => __( 'varer', 'kaupang-lean-cart' ),
+				'remove'       => __( 'Fjern', 'kaupang-lean-cart' ),
+				'subtotal'     => __( 'Delsum', 'kaupang-lean-cart' ),
+				'total'        => __( 'Totalt', 'kaupang-lean-cart' ),
+				'shipping'     => __( 'Frakt', 'kaupang-lean-cart' ),
+				'freeShipping' => __( 'Gratis', 'kaupang-lean-cart' ),
+				'updateError'  => __( 'Kunne ikke oppdatere', 'kaupang-lean-cart' ),
 			] ),
 		];
 
 		/**
-		 * Filter: lean_cart_config
+		 * Filter: kaupang/lean-cart/config
 		 *
 		 * Modify the configuration object passed to the JS cart.
 		 * Extension modules use this to add their own config keys.
 		 *
 		 * @param array $config The configuration array.
 		 */
-		return apply_filters( 'lean_cart_config', $config );
+		return apply_filters( 'kaupang/lean-cart/config', $config );
 	}
 
 	/**
@@ -140,11 +140,11 @@ class Lean_Cart_Assets {
 			return;
 		}
 
-		$base = LEAN_CART_URL . 'assets/js/';
+		$base = KAUPANG_LEAN_CART_URL . 'assets/js/';
 		$v    = $this->js_ver;
 
 		/**
-		 * Filter: lean_cart_importmap_imports
+		 * Filter: kaupang/lean-cart/importmap_imports
 		 *
 		 * A page may contain only ONE import map, so sibling plugins that ship
 		 * ES modules (e.g. lean-checkout) add their entries here instead of
@@ -162,12 +162,12 @@ class Lean_Cart_Assets {
 		// Extension modules load via dynamic import from cart-init; without
 		// map entries their URLs carry no version and edits never bust the
 		// browser cache.
-		foreach ( glob( LEAN_CART_PATH . 'assets/js/modules/*.js' ) as $module ) {
+		foreach ( glob( KAUPANG_LEAN_CART_PATH . 'assets/js/modules/*.js' ) as $module ) {
 			$name = 'modules/' . basename( $module );
 			$defaults[ $base . $name ] = $base . $name . '?ver=' . $v;
 		}
 
-		$imports = apply_filters( 'lean_cart_importmap_imports', $defaults );
+		$imports = apply_filters( 'kaupang/lean-cart/importmap_imports', $defaults );
 
 		echo '<script type="importmap">' . wp_json_encode( [ 'imports' => $imports ] ) . '</script>' . "\n";
 	}
@@ -181,7 +181,7 @@ class Lean_Cart_Assets {
 	 * and silently break ES module imports.
 	 */
 		public function add_module_type( string $tag, string $handle ): string {
-			if ( 'lean-cart-init' === $handle ) {
+			if ( 'kaupang-lean-cart-init' === $handle ) {
 				// Replace existing type attribute or add type="module" for ES module support
 				if ( strpos( $tag, 'type=' ) !== false ) {
 					$tag = preg_replace( '/type="[^"]*"/', 'type="module"', $tag );

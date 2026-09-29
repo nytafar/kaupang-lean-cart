@@ -20,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
 class Lean_Cart_Mix_And_Match {
 
 	public function __construct() {
-		add_filter( 'lean_cart_config', [ $this, 'extend_config' ] );
+		add_filter( 'kaupang/lean-cart/config', [ $this, 'extend_config' ] );
 
 		// Server-side safety net: reject MnM containers added without mnm_config.
 		// This surfaces the bug loudly if the JS extractor ever stops running.
@@ -52,15 +52,15 @@ class Lean_Cart_Mix_And_Match {
 		}
 
 		throw new \Automattic\WooCommerce\StoreApi\Exceptions\RouteException(
-			'lean_cart_mnm_missing_config',
-			esc_html__( 'Please choose your items before adding this product to the cart.', 'woocommerce-lean-cart' ),
+			'kaupang_lean_cart_mnm_missing_config',
+			esc_html__( 'Please choose your items before adding this product to the cart.', 'kaupang-lean-cart' ),
 			400
 		);
 	}
 
 	public function extend_config( array $config ): array {
-		$config['i18n']['mnmContainer']   = __( 'Sammensetning', 'lean-cart' );
-		$config['i18n']['mnmItemsSelected'] = __( '%d valgt', 'lean-cart' );
+		$config['i18n']['mnmContainer']   = __( 'Sammensetning', 'kaupang-lean-cart' );
+		$config['i18n']['mnmItemsSelected'] = __( '%d valgt', 'kaupang-lean-cart' );
 
 		return $config;
 	}

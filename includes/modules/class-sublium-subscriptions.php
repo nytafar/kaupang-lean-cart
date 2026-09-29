@@ -9,24 +9,24 @@ defined( 'ABSPATH' ) || exit;
 
 class Lean_Cart_Sublium_Subscriptions {
 
-	public const EXT_NAMESPACE = 'lean_cart_sublium';
+	public const EXT_NAMESPACE = 'kaupang_lean_cart_sublium';
 
 	private ?array $recurring_carts_cache = null;
 
 	public function __construct() {
-		add_filter( 'lean_cart_config', [ $this, 'extend_config' ] );
+		add_filter( 'kaupang/lean-cart/config', [ $this, 'extend_config' ] );
 		add_filter( 'woocommerce_store_api_add_to_cart_data', [ $this, 'capture_add_to_cart_data' ], 10, 2 );
 		add_action( 'woocommerce_add_to_cart', [ $this, 'apply_plan_after_add_to_cart' ], 20, 6 );
 		add_action( 'woocommerce_blocks_loaded', [ $this, 'register_store_api_data' ] );
 	}
 
 	public function extend_config( array $config ): array {
-		$config['i18n']['subliumSubscription'] = __( 'Abonnement', 'lean-cart' );
-		$config['i18n']['subliumRecurring']    = __( 'Fornyes', 'lean-cart' );
-		$config['i18n']['subliumToday']        = __( 'Betales i dag', 'lean-cart' );
-		$config['i18n']['subliumNextPayment']  = __( 'Neste betaling', 'lean-cart' );
-		$config['i18n']['subliumSignupFee']    = __( 'Oppstartsavgift', 'lean-cart' );
-		$config['i18n']['subliumTrial']        = __( 'Prøveperiode', 'lean-cart' );
+		$config['i18n']['subliumSubscription'] = __( 'Abonnement', 'kaupang-lean-cart' );
+		$config['i18n']['subliumRecurring']    = __( 'Fornyes', 'kaupang-lean-cart' );
+		$config['i18n']['subliumToday']        = __( 'Betales i dag', 'kaupang-lean-cart' );
+		$config['i18n']['subliumNextPayment']  = __( 'Neste betaling', 'kaupang-lean-cart' );
+		$config['i18n']['subliumSignupFee']    = __( 'Oppstartsavgift', 'kaupang-lean-cart' );
+		$config['i18n']['subliumTrial']        = __( 'Prøveperiode', 'kaupang-lean-cart' );
 
 		return $config;
 	}
@@ -41,14 +41,14 @@ class Lean_Cart_Sublium_Subscriptions {
 		$plan_id = absint( $raw_plan_id );
 
 		if ( $plan_id > 0 ) {
-			$add_to_cart_data['cart_item_data']['lean_cart_sublium_plan_id'] = $plan_id;
+			$add_to_cart_data['cart_item_data']['kaupang_lean_cart_sublium_plan_id'] = $plan_id;
 		}
 
 		return $add_to_cart_data;
 	}
 
 	public function apply_plan_after_add_to_cart( $cart_item_key, $product_id, $quantity, $variation_id, $variation, $cart_item_data ): void {
-		if ( empty( $cart_item_data['lean_cart_sublium_plan_id'] ) ) {
+		if ( empty( $cart_item_data['kaupang_lean_cart_sublium_plan_id'] ) ) {
 			return;
 		}
 
@@ -56,7 +56,7 @@ class Lean_Cart_Sublium_Subscriptions {
 			return;
 		}
 
-		$plan_id = absint( $cart_item_data['lean_cart_sublium_plan_id'] );
+		$plan_id = absint( $cart_item_data['kaupang_lean_cart_sublium_plan_id'] );
 		if ( $plan_id <= 0 || empty( WC()->cart->cart_contents[ $cart_item_key ] ) ) {
 			return;
 		}
@@ -66,7 +66,7 @@ class Lean_Cart_Sublium_Subscriptions {
 
 		if ( ! is_wp_error( $result ) ) {
 			$this->set_initial_price_data( $cart_item_key, $plan_id );
-			unset( WC()->cart->cart_contents[ $cart_item_key ]['lean_cart_sublium_plan_id'] );
+			unset( WC()->cart->cart_contents[ $cart_item_key ]['kaupang_lean_cart_sublium_plan_id'] );
 			WC()->cart->calculate_totals();
 		}
 	}
@@ -125,61 +125,61 @@ class Lean_Cart_Sublium_Subscriptions {
 	public function cart_item_schema(): array {
 		return [
 			'is_sublium_subscription' => [
-				'description' => __( 'Whether this item is a Sublium subscription item.', 'lean-cart' ),
+				'description' => __( 'Whether this item is a Sublium subscription item.', 'kaupang-lean-cart' ),
 				'type'        => 'boolean',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'plan_id' => [
-				'description' => __( 'Sublium plan ID.', 'lean-cart' ),
+				'description' => __( 'Sublium plan ID.', 'kaupang-lean-cart' ),
 				'type'        => 'integer',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'plan_type' => [
-				'description' => __( 'Sublium plan type.', 'lean-cart' ),
+				'description' => __( 'Sublium plan type.', 'kaupang-lean-cart' ),
 				'type'        => 'integer',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'summary' => [
-				'description' => __( 'Sublium plan summary.', 'lean-cart' ),
+				'description' => __( 'Sublium plan summary.', 'kaupang-lean-cart' ),
 				'type'        => 'string',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'signup_fee' => [
-				'description' => __( 'Sign-up fee in minor currency units.', 'lean-cart' ),
+				'description' => __( 'Sign-up fee in minor currency units.', 'kaupang-lean-cart' ),
 				'type'        => 'integer',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'initial_price' => [
-				'description' => __( 'Initial price in minor currency units.', 'lean-cart' ),
+				'description' => __( 'Initial price in minor currency units.', 'kaupang-lean-cart' ),
 				'type'        => 'integer',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'has_downpayment' => [
-				'description' => __( 'Whether this item has a Sublium downpayment.', 'lean-cart' ),
+				'description' => __( 'Whether this item has a Sublium downpayment.', 'kaupang-lean-cart' ),
 				'type'        => 'boolean',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'trial_days' => [
-				'description' => __( 'Trial duration in days.', 'lean-cart' ),
+				'description' => __( 'Trial duration in days.', 'kaupang-lean-cart' ),
 				'type'        => 'integer',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'next_payment_date' => [
-				'description' => __( 'Next payment date.', 'lean-cart' ),
+				'description' => __( 'Next payment date.', 'kaupang-lean-cart' ),
 				'type'        => 'string',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'recurring_cart_key' => [
-				'description' => __( 'Recurring cart grouping key.', 'lean-cart' ),
+				'description' => __( 'Recurring cart grouping key.', 'kaupang-lean-cart' ),
 				'type'        => 'string',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
@@ -228,13 +228,13 @@ class Lean_Cart_Sublium_Subscriptions {
 	public function cart_schema(): array {
 		return [
 			'has_sublium_subscriptions' => [
-				'description' => __( 'Whether the cart contains Sublium subscriptions.', 'lean-cart' ),
+				'description' => __( 'Whether the cart contains Sublium subscriptions.', 'kaupang-lean-cart' ),
 				'type'        => 'boolean',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'recurring_totals' => [
-				'description' => __( 'Recurring totals for Sublium subscription groups.', 'lean-cart' ),
+				'description' => __( 'Recurring totals for Sublium subscription groups.', 'kaupang-lean-cart' ),
 				'type'        => 'array',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,

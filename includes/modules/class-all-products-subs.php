@@ -13,14 +13,14 @@ defined( 'ABSPATH' ) || exit;
 class Lean_Cart_All_Products_Subs {
 
 	public function __construct() {
-		add_filter( 'lean_cart_config', [ $this, 'extend_config' ] );
+		add_filter( 'kaupang/lean-cart/config', [ $this, 'extend_config' ] );
 		add_filter( 'woocommerce_store_api_add_to_cart_data', [ $this, 'relay_scheme_fields' ], 10, 2 );
 		add_action( 'woocommerce_blocks_loaded', [ $this, 'register_store_api_data' ] );
 	}
 
 	public function extend_config( array $config ): array {
-		$config['i18n']['purchaseOneTime']    = __( 'Engangskjøp', 'lean-cart' );
-		$config['i18n']['purchaseSubscribe']  = __( 'Abonnement', 'lean-cart' );
+		$config['i18n']['purchaseOneTime']    = __( 'Engangskjøp', 'kaupang-lean-cart' );
+		$config['i18n']['purchaseSubscribe']  = __( 'Abonnement', 'kaupang-lean-cart' );
 
 		return $config;
 	}
@@ -59,7 +59,7 @@ class Lean_Cart_All_Products_Subs {
 
 		woocommerce_store_api_register_endpoint_data( [
 			'endpoint'        => \Automattic\WooCommerce\StoreApi\Schemas\V1\CartItemSchema::IDENTIFIER,
-			'namespace'       => 'lean_cart_apfs',
+			'namespace'       => 'kaupang_lean_cart_apfs',
 			'data_callback'   => [ $this, 'cart_item_data' ],
 			'schema_callback' => [ $this, 'cart_item_schema' ],
 			'schema_type'     => ARRAY_A,
@@ -72,7 +72,7 @@ class Lean_Cart_All_Products_Subs {
 	 * The description defaults to the scheme's cadence through WCS's own
 	 * localized period strings ("Hver 2. måned"), matching the theme's
 	 * plan headlines; a theme re-voices it via the
-	 * `lean_cart_apfs_scheme_description` filter.
+	 * `kaupang/lean-cart/apfs_scheme_description` filter.
 	 */
 	public function cart_item_data( array $cart_item ): array {
 		$scheme_key = $cart_item['wcsatt_data']['active_subscription_scheme'] ?? null;
@@ -97,14 +97,14 @@ class Lean_Cart_All_Products_Subs {
 				$cadence = wcs_get_subscription_period_strings( (int) $scheme->get_interval(), $scheme->get_period() );
 
 				/* translators: %s: subscription cadence ("2. måned"), localized by Woo Subscriptions. */
-				$description = sprintf( __( 'Hver %s', 'lean-cart' ), $cadence );
+				$description = sprintf( __( 'Hver %s', 'kaupang-lean-cart' ), $cadence );
 			}
 		}
 
 		return [
 			'active_scheme_key'  => (string) $scheme_key,
 			'is_subscription'    => true,
-			'scheme_description' => apply_filters( 'lean_cart_apfs_scheme_description', $description, (string) $scheme_key, $cart_item ),
+			'scheme_description' => apply_filters( 'kaupang/lean-cart/apfs_scheme_description', $description, (string) $scheme_key, $cart_item ),
 		];
 	}
 
@@ -114,19 +114,19 @@ class Lean_Cart_All_Products_Subs {
 	public function cart_item_schema(): array {
 		return [
 			'active_scheme_key' => [
-				'description' => __( 'Active subscription scheme key', 'lean-cart' ),
+				'description' => __( 'Active subscription scheme key', 'kaupang-lean-cart' ),
 				'type'        => 'string',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'is_subscription' => [
-				'description' => __( 'Whether the item is in subscription mode', 'lean-cart' ),
+				'description' => __( 'Whether the item is in subscription mode', 'kaupang-lean-cart' ),
 				'type'        => 'boolean',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,
 			],
 			'scheme_description' => [
-				'description' => __( 'Human-readable plan description', 'lean-cart' ),
+				'description' => __( 'Human-readable plan description', 'kaupang-lean-cart' ),
 				'type'        => 'string',
 				'context'     => [ 'view', 'edit' ],
 				'readonly'    => true,

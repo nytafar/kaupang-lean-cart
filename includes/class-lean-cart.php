@@ -30,13 +30,13 @@ final class Lean_Cart {
 		 * with the cart (e.g., bridge lean-cart:open events to
 		 * their own drawer/panel system).
 		 */
-		do_action( 'lean_cart_loaded' );
+		do_action( 'kaupang/lean-cart/loaded' );
 	}
 
 	private function load_core(): void {
-		require_once LEAN_CART_PATH . 'includes/class-lean-cart-assets.php';
-		require_once LEAN_CART_PATH . 'includes/class-lean-cart-hooks.php';
-		require_once LEAN_CART_PATH . 'includes/class-lean-cart-notices.php';
+		require_once KAUPANG_LEAN_CART_PATH . 'includes/class-lean-cart-assets.php';
+		require_once KAUPANG_LEAN_CART_PATH . 'includes/class-lean-cart-hooks.php';
+		require_once KAUPANG_LEAN_CART_PATH . 'includes/class-lean-cart-notices.php';
 
 		new Lean_Cart_Assets();
 		new Lean_Cart_Hooks();
@@ -51,22 +51,22 @@ final class Lean_Cart {
 	 */
 	private function load_modules(): void {
 		if ( class_exists( 'WC_Subscriptions' ) ) {
-			require_once LEAN_CART_PATH . 'includes/modules/class-subscriptions.php';
+			require_once KAUPANG_LEAN_CART_PATH . 'includes/modules/class-subscriptions.php';
 			new Lean_Cart_Subscriptions();
 		}
 
 		if ( class_exists( 'WC_Mix_and_Match' ) ) {
-			require_once LEAN_CART_PATH . 'includes/modules/class-mix-and-match.php';
+			require_once KAUPANG_LEAN_CART_PATH . 'includes/modules/class-mix-and-match.php';
 			new Lean_Cart_Mix_And_Match();
 		}
 
 		if ( class_exists( 'WCS_ATT' ) ) {
-			require_once LEAN_CART_PATH . 'includes/modules/class-all-products-subs.php';
+			require_once KAUPANG_LEAN_CART_PATH . 'includes/modules/class-all-products-subs.php';
 			new Lean_Cart_All_Products_Subs();
 		}
 
 		if ( class_exists( '\Sublium_WCS\Plugin' ) || function_exists( 'sublium_init' ) ) {
-			require_once LEAN_CART_PATH . 'includes/modules/class-sublium-subscriptions.php';
+			require_once KAUPANG_LEAN_CART_PATH . 'includes/modules/class-sublium-subscriptions.php';
 			new Lean_Cart_Sublium_Subscriptions();
 		}
 	}

@@ -1,12 +1,12 @@
 <?php
 /**
- * Plugin Name: WooCommerce Lean Cart
- * Plugin URI:  https://github.com/nytafar/woocommerce-lean-cart
+ * Plugin Name: Kaupang Lean Cart
+ * Plugin URI:  https://github.com/nytafar/kaupang-lean-cart
  * Description: A minimal, modular WooCommerce cart built on the Store API. Replaces legacy cart fragments with a vanilla JS state layer and event-driven UI.
  * Version:     0.1.1
  * Author:      Lasse Jellum
  * Author URI:  https://jellum.net
- * Text Domain: lean-cart
+ * Text Domain: kaupang-lean-cart
  * Requires PHP: 8.0
  * Requires at least: 6.0
  * Requires Plugins: woocommerce
@@ -14,14 +14,14 @@
  * WC tested up to: 11.1
  * License: GPL-2.0-or-later
  *
- * @package LeanCart
+ * @package Kaupang\LeanCart
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'LEAN_CART_VERSION', '0.1.1' );
-define( 'LEAN_CART_PATH', plugin_dir_path( __FILE__ ) );
-define( 'LEAN_CART_URL', plugin_dir_url( __FILE__ ) );
+define( 'KAUPANG_LEAN_CART_VERSION', '0.1.1' );
+define( 'KAUPANG_LEAN_CART_PATH', plugin_dir_path( __FILE__ ) );
+define( 'KAUPANG_LEAN_CART_URL', plugin_dir_url( __FILE__ ) );
 
 /**
  * HPOS: never touches orders (Store API cart only). Blocks: Store API client; live notices kept on cart/checkout.
@@ -41,6 +41,6 @@ add_action( 'plugins_loaded', function () {
 		return;
 	}
 
-	require_once LEAN_CART_PATH . 'includes/class-lean-cart.php';
+	require_once KAUPANG_LEAN_CART_PATH . 'includes/class-lean-cart.php';
 	Lean_Cart::get_instance();
 } );

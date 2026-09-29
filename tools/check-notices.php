@@ -2,7 +2,7 @@
 /**
  * Self-check for the page-cache-safe notices module.
  *
- *   wp eval-file wp-content/plugins/woocommerce-lean-cart/tools/check-notices.php
+ *   wp eval-file wp-content/plugins/kaupang-lean-cart/tools/check-notices.php
  *
  * Exits non-zero on failure.
  */
@@ -26,15 +26,15 @@ $notices = new Lean_Cart_Notices();
 $hook    = 'woocommerce_before_single_product';
 
 // Live page: WooCommerce's printer stays.
-add_filter( 'lean_cart_live_notices', '__return_true' );
+add_filter( 'kaupang/lean-cart/live_notices', '__return_true' );
 $notices->wrap_notices();
 if ( false === has_action( $hook, 'woocommerce_output_all_notices' ) ) {
 	$fail( 'Live page lost woocommerce_output_all_notices.' );
 }
-remove_filter( 'lean_cart_live_notices', '__return_true' );
+remove_filter( 'kaupang/lean-cart/live_notices', '__return_true' );
 
 // Cacheable page: swapped for the <noscript> printer at the same priority.
-add_filter( 'lean_cart_live_notices', '__return_false' );
+add_filter( 'kaupang/lean-cart/live_notices', '__return_false' );
 $notices->wrap_notices();
 if ( false !== has_action( $hook, 'woocommerce_output_all_notices' ) ) {
 	$fail( 'Cacheable page still prints live notices.' );

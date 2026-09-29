@@ -13,27 +13,27 @@ defined( 'ABSPATH' ) || exit;
 class Lean_Cart_Subscriptions {
 
 	public function __construct() {
-		add_filter( 'lean_cart_config', [ $this, 'extend_config' ] );
+		add_filter( 'kaupang/lean-cart/config', [ $this, 'extend_config' ] );
 	}
 
 	public function extend_config( array $config ): array {
 		$config['subscriptionPeriods'] = [
-			'day'   => __( 'dag', 'lean-cart' ),
-			'week'  => __( 'uke', 'lean-cart' ),
-			'month' => __( 'måned', 'lean-cart' ),
-			'year'  => __( 'år', 'lean-cart' ),
+			'day'   => __( 'dag', 'kaupang-lean-cart' ),
+			'week'  => __( 'uke', 'kaupang-lean-cart' ),
+			'month' => __( 'måned', 'kaupang-lean-cart' ),
+			'year'  => __( 'år', 'kaupang-lean-cart' ),
 		];
 
 		$config['subscriptionIntervals'] = [
 			/* translators: %s: period name (e.g., "måned") */
-			'singular' => __( 'Hver %s', 'lean-cart' ),
+			'singular' => __( 'Hver %s', 'kaupang-lean-cart' ),
 			/* translators: %1$d: interval number, %2$s: period name */
-			'plural'   => __( 'Hver %1$d. %2$s', 'lean-cart' ),
+			'plural'   => __( 'Hver %1$d. %2$s', 'kaupang-lean-cart' ),
 		];
 
-		$config['i18n']['subscription']  = __( 'Abonnement', 'lean-cart' );
-		$config['i18n']['signupFee']     = __( 'Oppstartsavgift', 'lean-cart' );
-		$config['i18n']['freeTrial']     = __( 'Gratis prøveperiode', 'lean-cart' );
+		$config['i18n']['subscription']  = __( 'Abonnement', 'kaupang-lean-cart' );
+		$config['i18n']['signupFee']     = __( 'Oppstartsavgift', 'kaupang-lean-cart' );
+		$config['i18n']['freeTrial']     = __( 'Gratis prøveperiode', 'kaupang-lean-cart' );
 
 		return $config;
 	}

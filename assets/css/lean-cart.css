@@ -5,7 +5,7 @@
  * Maps to theme tokens via CSS custom properties with standalone fallbacks.
  * Provides functional layout — themes override for visual polish.
  *
- * Dequeue entirely: add_filter('lean_cart_disable_styles', '__return_true');
+ * Dequeue entirely: add_filter('kaupang/lean-cart/disable_styles', '__return_true');
  */
 
 /* ── Token mapping ─────────────────────────────────────────────── */

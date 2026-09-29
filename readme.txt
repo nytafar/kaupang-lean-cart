@@ -1,4 +1,4 @@
-=== WooCommerce Lean Cart ===
+=== Kaupang Lean Cart ===
 Contributors: lassejellum
 Tags: woocommerce, store-api, cart, mini-cart, developer-friendly
 Requires at least: 6.0
@@ -31,7 +31,7 @@ It intercepts native add-to-cart forms and loop links, converts them into Store 
 = Key design decisions =
 
 - **No build step.** The JS ships as authored. ES module imports resolve at runtime via an import map printed in `<head>`. Cache busting uses file modification timestamps.
-- **Styling lives in the theme.** The plugin ships skeleton CSS scoped under `.lean-cart` that maps to CSS custom properties (`--lc-text`, `--lc-border`, `--lc-accent`, etc.) with standalone fallbacks. Themes set these tokens or dequeue the stylesheet entirely via `add_filter('lean_cart_disable_styles', '__return_true')`.
+- **Styling lives in the theme.** The plugin ships skeleton CSS scoped under `.lean-cart` that maps to CSS custom properties (`--lc-text`, `--lc-border`, `--lc-accent`, etc.) with standalone fallbacks. Themes set these tokens or dequeue the stylesheet entirely via `add_filter('kaupang/lean-cart/disable_styles', '__return_true')`.
 - **Modular plugin compatibility.** Extension modules are loaded conditionally based on class existence checks — zero overhead when the parent plugin isn't active.
 - **Form extractor pipeline.** Modules can register functions via `store.addFormExtractor()` that read plugin-specific form inputs and inject extra fields into the Store API add-to-cart body. This keeps core generic while supporting complex product types.
 - **Normalizer pipeline.** Modules register normalizers via `store.addNormalizer()` to enrich the display model with badges, subscription summaries, parent-child grouping, and purchase mode indicators.
@@ -78,7 +78,7 @@ The plugin emits a `lean-cart:open` event when an item is added. If your theme e
 
 == Installation ==
 
-1. Upload the `woocommerce-lean-cart` folder to `wp-content/plugins/`.
+1. Upload the `kaupang-lean-cart` folder to `wp-content/plugins/`.
 2. Activate the plugin in **Plugins → Installed Plugins**.
 3. Add `[data-lean-cart]` mount points to your theme templates.
 4. Optionally set CSS custom properties to match your theme tokens.
@@ -89,18 +89,18 @@ No configuration page. No settings screen. It works on activation.
 
 = Disabling the default stylesheet =
 
-    add_filter( 'lean_cart_disable_styles', '__return_true' );
+    add_filter( 'kaupang/lean-cart/disable_styles', '__return_true' );
 
 = Customizing i18n strings =
 
-    add_filter( 'lean_cart_i18n', function( $strings ) {
+    add_filter( 'kaupang/lean-cart/i18n', function( $strings ) {
         $strings['emptyCart'] = __( 'Nothing here yet!', 'my-theme' );
         return $strings;
     } );
 
 = Extending the config object =
 
-    add_filter( 'lean_cart_config', function( $config ) {
+    add_filter( 'kaupang/lean-cart/config', function( $config ) {
         $config['myCustomKey'] = 'value';
         return $config;
     } );
@@ -111,7 +111,7 @@ No configuration page. No settings screen. It works on activation.
 
     class Lean_Cart_My_Plugin {
         public function __construct() {
-            add_filter( 'lean_cart_config', [ $this, 'extend_config' ] );
+            add_filter( 'kaupang/lean-cart/config', [ $this, 'extend_config' ] );
         }
 
         public function extend_config( array $config ): array {
@@ -143,12 +143,12 @@ Lean Cart is built so every page can be served from a shared page cache, cart or
 - **Notices.** On GET requests outside cart, checkout and account, WooCommerce notices print inside `<noscript>`: no-JS visitors still see them, JS visitors get Lean Cart's own feedback. While session notices are pending, an `lc_notice` cookie is set. Configure your page cache to bypass entirely (no read, no store) when it is present.
 
     // Print notices normally on more pages.
-    add_filter( 'lean_cart_live_notices', fn( $live ) => $live || is_page( 'contact' ) );
+    add_filter( 'kaupang/lean-cart/live_notices', fn( $live ) => $live || is_page( 'contact' ) );
 
     // Rename the pending-notice cookie.
-    add_filter( 'lean_cart_notice_cookie', fn() => 'my_notice' );
+    add_filter( 'kaupang/lean-cart/notice_cookie', fn() => 'my_notice' );
 
-Self-check: `wp eval-file wp-content/plugins/woocommerce-lean-cart/tools/check-notices.php`
+Self-check: `wp eval-file wp-content/plugins/kaupang-lean-cart/tools/check-notices.php`
 
 == Frequently Asked Questions ==
 
@@ -166,11 +166,11 @@ Forms fall through to their native POST behavior. The standard WooCommerce add-t
 
 = Can I use this without any CSS? =
 
-Yes. Either dequeue the stylesheet with `lean_cart_disable_styles` or simply don't add the `.lean-cart` wrapper class and write your own styles targeting `[data-lean-cart]` attributes.
+Yes. Either dequeue the stylesheet with `kaupang/lean-cart/disable_styles` or simply don't add the `.lean-cart` wrapper class and write your own styles targeting `[data-lean-cart]` attributes.
 
 = How do I add support for another WooCommerce extension? =
 
-Create a PHP module class in `includes/modules/` that hooks into `lean_cart_config`, and a JS module in `assets/js/modules/` that registers normalizers and/or form extractors. Gate the PHP module on `class_exists()` in `Lean_Cart::load_modules()`. See the Subscriptions or Mix and Match modules for reference.
+Create a PHP module class in `includes/modules/` that hooks into `kaupang/lean-cart/config`, and a JS module in `assets/js/modules/` that registers normalizers and/or form extractors. Gate the PHP module on `class_exists()` in `Lean_Cart::load_modules()`. See the Subscriptions or Mix and Match modules for reference.
 
 == Screenshots ==
 

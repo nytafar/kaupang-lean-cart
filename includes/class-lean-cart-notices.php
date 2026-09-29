@@ -8,11 +8,11 @@
  *
  * 1. On GET views of catalogue/content pages, notices print inside <noscript>:
  *    no-JS visitors see them, JS visitors don't. Cart, checkout and account
- *    keep live notices (filter: lean_cart_live_notices), and so does any POST
+ *    keep live notices (filter: kaupang/lean-cart/live_notices), and so does any POST
  *    response, since it is never cached and may carry form validation errors.
  *
  * 2. While notices are pending, a short-lived `lc_notice` cookie is set (filter:
- *    lean_cart_notice_cookie). A page cache should treat that cookie as a full
+ *    kaupang/lean-cart/notice_cookie). A page cache should treat that cookie as a full
  *    bypass, so the page that prints the notice is rendered fresh and never
  *    stored. The cookie is cleared on the first request with nothing pending.
  */
@@ -35,13 +35,13 @@ class Lean_Cart_Notices {
 		$is_get = in_array( $_SERVER['REQUEST_METHOD'] ?? 'GET', [ 'GET', 'HEAD' ], true );
 
 		/**
-		 * Filter: lean_cart_live_notices
+		 * Filter: kaupang/lean-cart/live_notices
 		 *
 		 * Return true to print notices normally on the current request.
 		 *
 		 * @param bool $live Default: cart, checkout, account, or a non-GET request.
 		 */
-		if ( apply_filters( 'lean_cart_live_notices', ! $is_get || is_cart() || is_checkout() || is_account_page() ) ) {
+		if ( apply_filters( 'kaupang/lean-cart/live_notices', ! $is_get || is_cart() || is_checkout() || is_account_page() ) ) {
 			return;
 		}
 
@@ -66,13 +66,13 @@ class Lean_Cart_Notices {
 		}
 
 		/**
-		 * Filter: lean_cart_notice_cookie
+		 * Filter: kaupang/lean-cart/notice_cookie
 		 *
 		 * Name of the cookie flagging pending session notices.
 		 *
 		 * @param string $name Default 'lc_notice'.
 		 */
-		$name    = apply_filters( 'lean_cart_notice_cookie', 'lc_notice' );
+		$name    = apply_filters( 'kaupang/lean-cart/notice_cookie', 'lc_notice' );
 		$pending = wc_notice_count() > 0;
 		$flagged = isset( $_COOKIE[ $name ] );
 

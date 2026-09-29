@@ -32,7 +32,7 @@ export function init( store ) {
 	} );
 
 	store.addNormalizer( ( item, raw ) => {
-		const ext = raw.extensions?.lean_cart_sublium;
+		const ext = raw.extensions?.kaupang_lean_cart_sublium;
 		if ( ! ext || ! ext.is_sublium_subscription ) return item;
 
 		item.type = 'sublium-subscription';
@@ -62,7 +62,7 @@ export function init( store ) {
 	} );
 
 	store.addCartNormalizer( ( cart, raw ) => {
-		const ext = raw.extensions?.lean_cart_sublium;
+		const ext = raw.extensions?.kaupang_lean_cart_sublium;
 		if ( ! ext || ! Array.isArray( ext.recurring_totals ) ) return cart;
 
 		cart.recurringTotals = ext.recurring_totals.map( total => ( {
