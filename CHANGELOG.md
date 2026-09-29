@@ -4,6 +4,8 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-29
+
 Renamed WooCommerce Lean Cart → **Kaupang Lean Cart** before first production deploy. Identity moved, the
 front-end contract stays frozen. No back-compat aliases (all consumers are in-house and ship in the same change).
 
