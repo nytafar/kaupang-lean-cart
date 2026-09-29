@@ -4,7 +4,7 @@ Tags: woocommerce, store-api, cart, mini-cart, developer-friendly
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.1.0
+Stable tag: 0.1.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -177,6 +177,26 @@ Create a PHP module class in `includes/modules/` that hooks into `lean_cart_conf
 No screenshots. Lean Cart is a headless cart layer with no admin interface — all visual output is controlled by your theme.
 
 == Changelog ==
+
+= 0.1.1 – 2026-09-29 =
+
+**Added**
+* Sublium Subscriptions integration with recurring totals display.
+* `lean_cart_importmap_imports` filter so sibling plugins dock into the single import map.
+* Cacheable pages for cart-holders: header count painted from a localStorage snapshot, WooCommerce notices wrapped in `<noscript>` off cart/checkout/account (`lean_cart_live_notices`, `lean_cart_notice_cookie`).
+* All Products for Subscriptions: the chosen subscription scheme is carried through the Store API add and shown in the panel with its cadence (`lean_cart_apfs_scheme_description`).
+
+**Changed**
+* Mix and Match child nesting moved from the `lean-cart:updated` listener into the cart normalizer.
+* Adopted suite kit v1: header `Version:` is the single source of truth (synced by `tools/pre-commit`), this CHANGELOG replaces the README changelog, standard plugin header, HPOS and cart/checkout blocks compatibility declared.
+* Suite kit v2.1 (tooling, generated readme.txt); no runtime change.
+* Skeleton CSS fallbacks are palette-neutral (currentColor/Canvas); themes are the only source of colour.
+* Extension modules get versioned URLs in the import map, so module edits bust the browser cache.
+
+**Fixed**
+* Cart cookies are re-set after Store API requests so the cart hash matches page loads.
+* Product titles with HTML entities (e.g. apostrophes) no longer show literally in the cart.
+* Duplicate subscription badges collapse to one.
 
 = 0.1.0 – 2026-04-14 =
 

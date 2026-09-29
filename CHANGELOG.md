@@ -4,6 +4,8 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-29
+
 ### Added
 - Sublium Subscriptions integration with recurring totals display.
 - `lean_cart_importmap_imports` filter so sibling plugins dock into the single import map.
