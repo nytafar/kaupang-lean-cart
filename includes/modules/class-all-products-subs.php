@@ -14,6 +14,7 @@ class Lean_Cart_All_Products_Subs {
 
 	public function __construct() {
 		add_filter( 'lean_cart_config', [ $this, 'extend_config' ] );
+		add_filter( 'woocommerce_store_api_add_to_cart_data', [ $this, 'relay_scheme_fields' ], 10, 2 );
 		add_action( 'woocommerce_blocks_loaded', [ $this, 'register_store_api_data' ] );
 	}
 
@@ -22,6 +23,27 @@ class Lean_Cart_All_Products_Subs {
 		$config['i18n']['purchaseSubscribe']  = __( 'Abonnement', 'lean-cart' );
 
 		return $config;
+	}
+
+	/**
+	 * Relay the chosen scheme into the classic request globals.
+	 *
+	 * APfS reads `convert_to_sub_{id}` from $_REQUEST inside its
+	 * `woocommerce_add_cart_item_data` handler — which runs during a
+	 * Store API add too, but the REST body never reaches $_REQUEST.
+	 * The form extractor (assets/js/modules/all-products-subs.js) lifts
+	 * the checked scheme radio into the add-item payload; replaying it
+	 * here reproduces the classic submit exactly, so APfS's own
+	 * validation, defaults and price application run untouched.
+	 */
+	public function relay_scheme_fields( array $add_to_cart_data, \WP_REST_Request $request ): array {
+		foreach ( $request->get_params() as $key => $value ) {
+			if ( 0 === strpos( $key, 'convert_to_sub' ) && is_scalar( $value ) ) {
+				$_REQUEST[ $key ] = wc_clean( (string) $value );
+			}
+		}
+
+		return $add_to_cart_data;
 	}
 
 	/**
@@ -46,12 +68,43 @@ class Lean_Cart_All_Products_Subs {
 
 	/**
 	 * Add APfS scheme data to each cart item in the Store API response.
+	 *
+	 * The description defaults to the scheme's cadence through WCS's own
+	 * localized period strings ("Hver 2. måned"), matching the theme's
+	 * plan headlines; a theme re-voices it via the
+	 * `lean_cart_apfs_scheme_description` filter.
 	 */
-	public function cart_item_data(): array {
+	public function cart_item_data( array $cart_item ): array {
+		$scheme_key = $cart_item['wcsatt_data']['active_subscription_scheme'] ?? null;
+
+		// null = not a SATT decision; false/'0' = an explicit one-time choice.
+		if ( empty( $scheme_key ) ) {
+			return [
+				'active_scheme_key'  => '',
+				'is_subscription'    => false,
+				'scheme_description' => '',
+			];
+		}
+
+		$description = '';
+		$product     = $cart_item['data'] ?? null;
+
+		if ( $product instanceof \WC_Product && class_exists( 'WCS_ATT_Product_Schemes' ) ) {
+			$schemes = \WCS_ATT_Product_Schemes::get_subscription_schemes( $product );
+			$scheme  = $schemes[ $scheme_key ] ?? null;
+
+			if ( $scheme && function_exists( 'wcs_get_subscription_period_strings' ) ) {
+				$cadence = wcs_get_subscription_period_strings( (int) $scheme->get_interval(), $scheme->get_period() );
+
+				/* translators: %s: subscription cadence ("2. måned"), localized by Woo Subscriptions. */
+				$description = sprintf( __( 'Hver %s', 'lean-cart' ), $cadence );
+			}
+		}
+
 		return [
-			'active_scheme_key'  => '',
-			'is_subscription'    => false,
-			'scheme_description' => '',
+			'active_scheme_key'  => (string) $scheme_key,
+			'is_subscription'    => true,
+			'scheme_description' => apply_filters( 'lean_cart_apfs_scheme_description', $description, (string) $scheme_key, $cart_item ),
 		];
 	}
 
