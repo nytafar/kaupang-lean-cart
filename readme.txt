@@ -4,7 +4,7 @@ Tags: woocommerce, store-api, cart, mini-cart, developer-friendly
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.2.0
+Stable tag: 0.2.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -191,6 +191,27 @@ Create a PHP module class in `includes/modules/` that hooks into `kaupang/lean-c
 No screenshots. Lean Cart is a headless cart layer with no admin interface — all visual output is controlled by your theme.
 
 == Changelog ==
+
+= 0.2.1 – 2026-10-23 =
+
+**Fixed**
+* Cart writes no longer lose updates. Every Store API call (add, quantity, remove, coupons, fetch) now goes through one queue, so WooCommerce's read-modify-write cart session sees one request at a time, in order. Before, two overlapping writes overwrote each other: on Wholesale's order table, `+` twice and then a variation left the line at 2, not 4 (crm plan D-121).
+* The state is the server's latest answer with still-pending optimistic changes replayed on top. An earlier write's response no longer overwrites a newer change.
+* A failed write restores the server's real cart (the cart in a 409 error, otherwise a fresh fetch), not a snapshot from before the op that also undid writes that succeeded meanwhile.
+* A `changeQuantity()` promise superseded by a newer change on the same line now settles with the write that carries it; it used to hang. Removing a line cancels its pending quantity write.
+* Quantity changes are kept as a delta and turned into an absolute quantity when the write takes its turn, from the server's latest cart (within the line's min/max). An add that merged into a line followed by `+` on it no longer loses the add.
+* Every Store API request times out after 20 s. A request that never answers no longer freezes the queue; the store re-fetches the real cart and moves on.
+* Queued calls run under the Web Lock `kaupang-lean-cart` where available, so two tabs of the same shop serialise their writes too.
+* `[data-lean-cart="checkout-url"]` links wait for queued writes (8 s at most) before navigating, so a burst of changes is not lost on the way to checkout.
+* Waiting for the Web Lock is limited to 25 s; after that, or when the lock is refused (e.g. SecurityError), the write runs without it. A tab suspended while holding the lock (iOS Safari) no longer freezes the other tabs' carts.
+* `fetchCart()` no longer takes the Web Lock (it stays in the tab's queue): a held lock disables the back/forward cache on older Chromium (Samsung Internet).
+* A write cut off by the 20 s timeout may still finish on the server: the store now waits 10 s, holding its turn, before re-reading the cart. The shopper sees the write if it landed, and nothing queued overlaps the still-running request.
+* A pending `+`/`−` on a line that disappeared (another tab, re-keyed) now raises the update error and shows the real cart; it used to snap back silently.
+* The checkout link's `aria-busy` is cleared before navigating and on `pageshow`, so Back from checkout no longer leaves it marked busy.
+
+**Added**
+* `store.whenIdle()` (resolves once queued writes and debounced changes have landed) and `store.enqueue( fn, { timeout } )` (run your own Store API call in the cart's queue; `timeout: Infinity` holds the turn until it settles, for an order submit). Additive; the rest of the contract is unchanged.
+* `tools/check-cart-queue.mjs`: drives the store against a fake Store API with WooCommerce's lost-update session, and sets latency, failures, hangs and network errors per request; exits non-zero on failure. Run it with `/root/.nvm/versions/node/v22.21.0/bin/node tools/check-cart-queue.mjs` on the server (any Node 18+). An exception to the suite's PHP-native check rule (conventions §10): the store is browser JavaScript and cannot be driven from PHP.
 
 = 0.2.0 – 2026-09-29 =
 

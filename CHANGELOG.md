@@ -4,6 +4,8 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-23
+
 ### Fixed
 - Cart writes no longer lose updates. Every Store API call (add, quantity, remove, coupons, fetch) now goes through one queue, so WooCommerce's read-modify-write cart session sees one request at a time, in order. Before, two overlapping writes overwrote each other: on Wholesale's order table, `+` twice and then a variation left the line at 2, not 4 (crm plan D-121).
 - The state is the server's latest answer with still-pending optimistic changes replayed on top. An earlier write's response no longer overwrites a newer change.
