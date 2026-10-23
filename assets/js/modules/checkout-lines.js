@@ -3,8 +3,8 @@
  * lines are Lean Cart's, with the drawer's line markup, quantity buttons and
  * remove, all through the store. Everything else in the review (subtotal,
  * coupons, shipping, fees, VAT, total, payment) stays WooCommerce's and keeps
- * refreshing through update_order_review; the classic-pages bridge, which
- * loads this, triggers that refresh after every drawer change.
+ * refreshing through update_order_review; the classic-pages bridge (cart-init
+ * starts this once the bridge runs) triggers that refresh after every change.
  *
  * The mount ([data-lean-cart="checkout-lines"], printed by PHP before the
  * review table) sits outside the fragment update_order_review replaces, so a
@@ -12,8 +12,6 @@
  * until then WooCommerce's own rows are what the shopper sees, and the CSS
  * hides those only next to a visible mount.
  */
-
-import { renderItem, paintLines } from '../cart-ui.js';
 
 const { i18n } = window.leanCartConfig;
 
@@ -23,10 +21,13 @@ const linesOf = ( state ) => JSON.stringify( state.items.map( i => [ i.key, i.qu
 const format = ( s, ...args ) => args.reduce( ( out, a, n ) => out.replace( `%${ n + 1 }$s`, a ).replace( '%s', a ), s );
 
 /**
+ * No imports of its own (see classic-pages.js): cart-init passes cart-ui's.
+ *
  * @param {object} store - The cart store (getState).
  * @param {object} $     - jQuery, with blockUI.
+ * @param {object} ui    - cart-ui's { renderItem, paintLines }.
  */
-export function init( store, $ ) {
+export function init( store, $, { renderItem, paintLines } ) {
 	const root = document.querySelector( '[data-lean-cart="checkout-lines"]' );
 	const list = root?.querySelector( '[data-lean-cart="checkout-items"]' );
 	if ( ! list ) return;
@@ -75,7 +76,8 @@ export function init( store, $ ) {
 			// step. Not while an order is being placed. The refresh's own re-read
 			// shows the same lines; if it does not (a plugin that changes lines on
 			// every totals calculation), it triggers nothing: one refresh per run.
-			const changed = last && linesOf( last ) !== linesOf( state ) && ! form?.classList.contains( 'processing' );
+			// Not for an empty cart: the bridge leaves the checkout for the cart page.
+			const changed = state.items.length && last && linesOf( last ) !== linesOf( state ) && ! form?.classList.contains( 'processing' );
 			if ( changed && ! chased ) $( document.body ).trigger( 'update_checkout' );
 			chased = changed && ! chased;
 		} else {

@@ -23,17 +23,13 @@
  *   On the cart page the form stays blocked until a refresh made after the
  *   last drawer change has replaced it, so it never posts older quantities.
  * - Neither happens while an order is being placed; a failed one catches up.
- * - A checkout that drawer changes leave with an empty cart reloads, so
- *   WooCommerce redirects to the cart page as it does for an empty checkout.
+ * - A checkout whose cart is emptied, by a change here or as a read shows
+ *   (another tab, an order placed there), goes to the cart page, as WooCommerce
+ *   redirects an empty checkout.
  * - Checkout lines: on the checkout the order review's item lines are Lean
- *   Cart's where PHP printed their mount (checkout-lines.js).
+ *   Cart's where PHP printed their mount (checkout-lines.js, which cart-init
+ *   starts once this runs).
  */
-
-import { wait } from '../cart-api.js';
-// Static, not a later import(): the lines must be ready when the store is
-// seeded with the page's cart, not one task later behind the page's DOM-ready
-// scripts (a visible swap of WooCommerce's rows for Lean Cart's).
-import * as checkoutLines from './checkout-lines.js';
 
 // WooCommerce core's classic cart and checkout endpoints. Every one of them
 // loads the cart session and saves it when done.
@@ -60,12 +56,18 @@ export function classicPage() {
 }
 
 /**
+ * No imports of its own: cart-init passes what it needs. A dynamic import()
+ * then resolves in one step, before the checkout's DOM-ready scripts; every
+ * module it imported would be one more task, run after them (0.2 s later on
+ * staging, a visible swap of WooCommerce's rows for Lean Cart's lines).
+ *
  * @param {object} store - The cart store (whenIdle, enqueue, fetchCart).
  * @param {object} $     - jQuery.
- * @param {object} opts  - { cartUrl, read }: read = the page's first cart read
- *                         is left to the bridge (cart-init does it elsewhere).
+ * @param {object} opts  - { cartUrl, read, wait }: read = the page's first cart
+ *                         read is left to the bridge (cart-init does it
+ *                         elsewhere); wait = cart-api's timeout helper.
  */
-export function init( store, $, { cartUrl, read = false } ) {
+export function init( store, $, { cartUrl, read = false, wait } ) {
 	const page = classicPage();
 	if ( page !== 'checkout' && read ) store.fetchCart();
 	if ( ! page ) return;
@@ -103,11 +105,13 @@ export function init( store, $, { cartUrl, read = false } ) {
 		if ( placing() ) return;
 		if ( behind ) {
 			behind = false;
-			// A checkout whose cart a drawer or summary change emptied: update_order_review
-			// would answer "session expired" and leave no form. A reload runs WooCommerce's
-			// empty-cart redirect to the cart page instead.
+			// An emptied checkout: update_order_review would answer "session expired"
+			// and leave no form. Go to the cart page, where WooCommerce shows its empty
+			// cart. Not a reload: the checkout's URL may carry ?add-to-cart= or another
+			// cart action, which would run again; and replace(), so that no history
+			// entry leads back to the stale checkout.
 			if ( page === 'checkout' && store.getState()?.items.length === 0 ) {
-				location.reload();
+				location.replace( cartUrl );
 				return;
 			}
 			refreshPage(); // its request makes the drawer re-read after it
@@ -253,17 +257,18 @@ export function init( store, $, { cartUrl, read = false } ) {
 		refreshGen = null;
 	}
 
-	// The checkout's order review shows Lean Cart's lines where PHP printed their
-	// mount (kaupang/lean-cart/checkout_lines). If this fails, WooCommerce's rows
-	// stay, and the bridge runs on.
-	if ( page === 'checkout' && document.querySelector( '[data-lean-cart="checkout-lines"]' ) ) {
-		try {
-			checkoutLines.init( store, $ );
-		} catch {}
-	}
-
 	document.addEventListener( 'lean-cart:updated', ( e ) => {
-		if ( e.detail?.source === 'read' ) return;
+		if ( e.detail?.source === 'read' ) {
+			// A checkout emptied elsewhere (another tab, an order placed there): once
+			// nothing is pending here, catch up as after a change, which leaves.
+			if ( page === 'checkout' && ! e.detail.state.items.length ) {
+				store.whenIdle().then( () => {
+					behind = true;
+					catchUp();
+				} );
+			}
+			return;
+		}
 		gen++;
 		guard();
 		if ( refreshing ) return;

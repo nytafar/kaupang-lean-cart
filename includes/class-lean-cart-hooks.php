@@ -15,7 +15,8 @@ class Lean_Cart_Hooks {
 		add_filter( 'woocommerce_cart_fragment_refresh', '__return_false' );
 		add_filter( 'rest_post_dispatch', [ $this, 'sync_cart_cookies' ], 10, 3 );
 		add_action( 'woocommerce_checkout_order_review', [ $this, 'print_checkout_lines' ], 5 );
-		add_filter( 'kaupang/lean-cart/config', [ $this, 'seed_checkout_cart' ] );
+		// After the shortcode has rendered (and calculated) the cart, before the footer scripts print (20).
+		add_action( 'wp_footer', [ $this, 'seed_checkout_cart' ], 1 );
 	}
 
 	/**
@@ -23,7 +24,7 @@ class Lean_Cart_Hooks {
 	 * checkout page, not its endpoints (order-pay, order-received), not a
 	 * FunnelKit checkout (its own layout and summary), and the filter on.
 	 */
-	private function checkout_lines(): bool {
+	private static function checkout_lines(): bool {
 		if ( ! is_checkout() || is_wc_endpoint_url() || ( function_exists( 'wfacp_template' ) && wfacp_template() ) ) {
 			return false;
 		}
@@ -40,37 +41,90 @@ class Lean_Cart_Hooks {
 	}
 
 	/**
-	 * Give the checkout lines the cart in the page (leanCartConfig.cart), so
-	 * they paint with the page instead of after the first cart read, seconds
-	 * in. WooCommerce's own hydration, as its block checkout does: a Store API
-	 * GET of the cart run in-process, with extensions' hydration hooks
-	 * (Mix-and-Match), nonce check off for the GET only, and the session's
-	 * notices set aside and put back, so the page shows none twice.
+	 * Whether this page carries the cart for the checkout lines
+	 * (leanCartConfig.cart, printed by seed_checkout_cart()).
 	 *
 	 * ponytail: the shortcode in the page content only, not WooCommerce's
 	 * "classic shortcode" block; that page keeps painting after the first read.
-	 *
-	 * @param array $config Lean Cart's JS config.
 	 */
-	public function seed_checkout_cart( $config ) {
-		$hydration = 'Automattic\WooCommerce\Blocks\Domain\Services\Hydration';
-		if ( ! $this->checkout_lines() || ! wc_post_content_has_shortcode( 'woocommerce_checkout' ) || ! WC()->cart || WC()->cart->is_empty()
-			|| ! class_exists( $hydration ) || ! class_exists( 'Automattic\WooCommerce\Blocks\Package' ) ) {
-			return $config;
+	public static function seeds_checkout(): bool {
+		return self::checkout_lines() && wc_post_content_has_shortcode( 'woocommerce_checkout' ) && WC()->cart && ! WC()->cart->is_empty();
+	}
+
+	/**
+	 * Give the checkout lines the cart in the page (leanCartConfig.cart), so
+	 * they paint with the page instead of after the first cart read, seconds
+	 * in. Added to the config script in the footer, once the shortcode has
+	 * calculated the cart.
+	 */
+	public function seed_checkout_cart(): void {
+		$cart = self::seeds_checkout() ? self::cart_seed() : null;
+		if ( $cart ) {
+			// JSON_HEX_TAG: shop text can't close the script.
+			wp_add_inline_script( 'kaupang-lean-cart-init', 'window.leanCartConfig.cart = ' . wp_json_encode( $cart, JSON_HEX_TAG ) . ';', 'before' );
 		}
+	}
+
+	/**
+	 * The cart as a Store API cart response, trimmed to what the store's
+	 * normalizers read, or null. WooCommerce's own hydration, as its block
+	 * checkout uses: a GET of the cart route run in-process, with extensions'
+	 * hydration hooks (Mix-and-Match).
+	 *
+	 * It must leave the classic checkout as without it, on WooCommerce 10.x and
+	 * 11.x alike:
+	 * - only a cart the page has calculated: the route would calculate it
+	 *   itself, in block mode (another default shipping method, saved; shipping
+	 *   hidden until an address is entered);
+	 * - put back on every exit what the read changes: the cart's context, which
+	 *   WooCommerce restores only from 11.1 (and leaves on 'store-api' before),
+	 *   the shipping packages, the whole session (notices, chosen shipping
+	 *   method), and the Store API nonce check, which before 11.1 an \Error in
+	 *   the route leaves off for the rest of the request.
+	 */
+	public static function cart_seed(): ?array {
+		$hydration = 'Automattic\WooCommerce\Blocks\Domain\Services\Hydration';
+		if ( ! did_action( 'woocommerce_after_calculate_totals' ) || ! WC()->cart || ! WC()->session instanceof WC_Session
+			|| ! class_exists( $hydration ) || ! class_exists( 'Automattic\WooCommerce\Blocks\Package' ) ) {
+			return null;
+		}
+		$service  = \Automattic\WooCommerce\Blocks\Package::container()->get( $hydration );
+		$context  = WC()->cart->cart_context;
+		$packages = WC()->shipping()->packages;
+		// WC_Session has no public way to read or put back all of its data.
+		$session = ( fn() => [ $this->_data, $this->_dirty ] )->call( WC()->session );
 		try {
-			$cart = \Automattic\WooCommerce\Blocks\Package::container()->get( $hydration )->get_rest_api_response_data( '/wc/store/v1/cart' )['body'] ?? null;
+			$cart = $service->get_rest_api_response_data( '/wc/store/v1/cart' )['body'] ?? null;
 		} catch ( \Throwable $e ) {
 			$cart = null; // no seed: the lines paint after the first read, as without one
+		} finally {
+			WC()->cart->cart_context   = $context;
+			WC()->shipping()->packages = $packages;
+			( function ( $saved ) {
+				[ $this->_data, $this->_dirty ] = $saved;
+			} )->call( WC()->session, $session );
+			remove_filter( 'woocommerce_store_api_disable_nonce_check', [ $service, 'disable_nonce_check_callback' ] );
 		}
-		if ( is_array( $cart ) && ! empty( $cart['items'] ) ) {
-			foreach ( $cart['items'] as &$item ) {
-				unset( $item['description'], $item['short_description'] ); // unused by the lines, most of the page weight
-			}
-			unset( $item );
-			$config['cart'] = $cart;
+		if ( ! is_array( $cart ) || empty( $cart['items'] ) ) {
+			return null;
 		}
-		return $config;
+
+		// What normalizeCart(), normalizeItem() and the extension modules read; not
+		// addresses, shipping rates, payment methods, cross-sells or descriptions.
+		$keep = static fn( $data, array $keys ) => array_intersect_key( (array) $data, array_flip( $keys ) );
+		$seed = $keep( $cart, [ 'items', 'coupons', 'totals', 'needs_shipping', 'extensions' ] );
+		$seed['totals'] = $keep( $cart['totals'] ?? [], [ 'total_items', 'total_items_tax', 'total_price', 'total_tax', 'total_shipping', 'total_shipping_tax' ] );
+		$seed['items']  = array_map(
+			static function ( $item ) use ( $keep ) {
+				$line           = $keep( $item, [ 'key', 'id', 'type', 'name', 'quantity', 'quantity_limits', 'permalink', 'variation', 'item_data', 'extensions' ] );
+				$line['prices'] = $keep( $item['prices'] ?? [], [ 'price' ] );
+				$line['totals'] = $keep( $item['totals'] ?? [], [ 'line_subtotal', 'line_subtotal_tax', 'line_total', 'line_total_tax' ] );
+				$line['images'] = empty( $item['images'] ) ? [] : [ $keep( current( $item['images'] ), [ 'src', 'alt' ] ) ];
+				return $line;
+			},
+			$cart['items']
+		);
+		return $seed;
 	}
 
 	/**
@@ -84,7 +138,7 @@ class Lean_Cart_Hooks {
 	 * own order summary.
 	 */
 	public function print_checkout_lines(): void {
-		if ( ! $this->checkout_lines() ) {
+		if ( ! self::checkout_lines() ) {
 			return;
 		}
 

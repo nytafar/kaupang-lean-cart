@@ -15,6 +15,8 @@
 
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { register } from 'node:module';
+import { readFileSync } from 'node:fs';
 
 const jsDir = path.resolve( process.argv[ 2 ] || path.join( path.dirname( fileURLToPath( import.meta.url ) ), '../assets/js' ) );
 const sleep = ( ms ) => new Promise( r => setTimeout( r, ms ) );
@@ -536,8 +538,9 @@ const NONCE = 'woocommerce-cart-nonce=n';
 
 // page: 'checkout' | 'cart' | 'empty-cart' | other. Options per request (route, entry): latency → ms,
 // fail → true (submit: result failure; others: HTTP 500), hang → never answers. Page: drawer → the page
-// has Lean Cart markup; initCheckout → checkout.js sends its update at DOM ready (jq.ready()).
-function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang = () => false, drawer = true, initCheckout = false } = {} ) {
+// has Lean Cart markup; initCheckout → checkout.js sends its update at DOM ready (jq.ready()). keepCart → a
+// successful submit leaves the cart (a gateway's 3-D Secure step: the cart empties once it is paid).
+function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang = () => false, drawer = true, initCheckout = false, keepCart = false } = {} ) {
 	const handlers = {};
 	const triggers = [];  // events triggered on document.body
 	const globals = [];   // jQuery's global ajax events: { name, jq, data, t }
@@ -598,7 +601,7 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 				let reply = {};
 				if ( route === 'classic:checkout' ) {
 					reply = failed ? { result: 'failure', messages: '' } : { result: 'success', redirect: 'https://shop.test/kassen/order-received/1/' };
-					if ( ! failed ) srv.cart = []; // the order is placed
+					if ( ! failed && ! keepCart ) srv.cart = []; // the order is placed
 				} else if ( ! failed ) {
 					for ( const [ k, v ] of entry.data ) {
 						const line = entry.data.has( 'update_cart' ) && cart.find( i => `cart[${ i.key }][qty]` === k );
@@ -799,16 +802,27 @@ function setPage( { jQuery, checkout = false, cart = false, dom = {} } ) {
 globalThis.location = { href: 'https://shop.test/kassen/' };
 globalThis.CSS = { escape: String };
 const bridgeUrl = () => pathToFileURL( path.join( jsDir, 'modules/classic-pages.js' ) ).href + '?run=' + run;
+const { wait } = await import( pathToFileURL( path.join( jsDir, 'cart-api.js' ) ).href ); // the bridge's timeout helper, as cart-init passes it
+// A page's location: reloads, replace() targets, and assignments to href (each a history entry).
+function fakeLocation( href ) {
+	const loc = { reloads: 0, replaced: [], assigned: [], reload() { loc.reloads++; }, replace( url ) { loc.replaced.push( url ); } };
+	Object.defineProperty( loc, 'href', { get: () => href, set( v ) { loc.assigned.push( v ); }, enumerable: true } );
+	return loc;
+}
 
-// A fresh store with the bridge on `page`. `before( ctx, jq )` runs before the bridge loads; DOM ready
-// comes after it, unless `before` made it come first (jq.ready()). `read`: init's option.
-async function freshBridge( page, srv, jqOptions, { before, read, mnm } = {} ) {
+// A fresh store with the bridge on `page` (and the checkout lines where `before` put their mount, as
+// cart-init starts them). `before( ctx, jq )` runs before the bridge loads; DOM ready comes after it,
+// unless `before` made it come first (jq.ready()). `read`: init's option. `href`: the page's URL.
+async function freshBridge( page, srv, jqOptions, { before, read, mnm, href } = {} ) {
 	const ctx = await freshStore( { mnm } );
 	const jq = fakeJQuery( srv, page, jqOptions );
-	globalThis.location = { href: page === 'checkout' ? 'https://shop.test/kassen/' : CART_URL, reloads: 0, reload() { this.reloads++; } };
+	globalThis.location = fakeLocation( href || ( page === 'checkout' ? 'https://shop.test/kassen/' : CART_URL ) );
 	setPage( { jQuery: jq.$, checkout: page === 'checkout', cart: page !== 'checkout', dom: jq.dom } );
 	await before?.( ctx, jq );
-	( await import( bridgeUrl() ) ).init( ctx.store, jq.$, { cartUrl: CART_URL, read } );
+	( await import( bridgeUrl() ) ).init( ctx.store, jq.$, { cartUrl: CART_URL, read, wait } );
+	if ( jq.dom[ '[data-lean-cart="checkout-lines"]' ] ) {
+		( await import( pathToFileURL( path.join( jsDir, 'modules/checkout-lines.js' ) ).href ) ).init( ctx.store, jq.$, await import( pathToFileURL( path.join( jsDir, 'cart-ui.js' ) ).href ) );
+	}
 	jq.ready();
 	return { ...ctx, ...jq };
 }
@@ -852,7 +866,7 @@ await scenario( 'bridge: page gating', async () => {
 	const prefilter = $.ajaxPrefilter;
 	let hooked = 0;
 	$.ajaxPrefilter = ( fn ) => prefilter( fn, hooked++ );
-	init( store, $, { cartUrl: CART_URL } );
+	init( store, $, { cartUrl: CART_URL, wait } );
 	ok( hooked === 0, `init on order-pay hooks nothing into jQuery (got ${ hooked })` );
 } );
 
@@ -1007,7 +1021,7 @@ await scenario( 'bridge, cart page: only WooCommerce\'s own requests are queued 
 
 await scenario( 'bridge, submit: waits for a pending drawer write and holds the queue; after the order nothing refreshes or re-reads (finding 2)', async () => {
 	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 }, { key: 'b', id: 2, quantity: 1 } ], { latency: () => 80 } );
-	const { store, checkout, checkoutForm, triggers } = await freshBridge( 'checkout', srv, { latency: ( r ) => r === 'classic:checkout' ? 400 : 60 } );
+	const { store, checkout, checkoutForm, triggers } = await freshBridge( 'checkout', srv, { latency: ( r ) => r === 'classic:checkout' ? 400 : 60, keepCart: true } );
 	await store.fetchCart();
 	store.changeQuantity( 'a', 1 ); // debounced: not queued yet
 	await sleep( 50 );
@@ -1025,14 +1039,13 @@ await scenario( 'bridge, submit: waits for a pending drawer write and holds the 
 	ok( writeB && writeB.start >= submit.end, 'a drawer change during the submit was sent after it' );
 	ok( ! triggers.slice( clicked ).includes( 'update_checkout' ), `no update_checkout after Place order (got ${ triggers.slice( clicked ) })` );
 	ok( submit && after( srv, submit.end ).map( e => e.route ).join( ' ' ) === 'cart/update-item', `after the order only the drawer's own change, no update_order_review or re-read (got ${ submit && after( srv, submit.end ).map( e => e.route ).join( ' ' ) })` );
-	// The gateway's 3-D Secure step fails and hands the form back: the page catches up. This
-	// order emptied the cart (b's write found no line), so catching up is a reload, as for any
-	// emptied checkout; a failed order that leaves the cart is the next scenario.
+	ok( lines( srv.cart ) === 'a=2,b=2', `the order's 3-D Secure step leaves the cart, with both changes (got ${ lines( srv.cart ) })` );
+	// The gateway's 3-D Secure step fails and hands the form back: the page catches up.
 	const t = Date.now();
 	checkoutForm.classList.remove( 'processing' );
 	await sleep( 500 );
 	await store.whenIdle();
-	ok( location.reloads === 1 && after( srv, t ).length === 0, `then the emptied checkout reloads, with no update_order_review (reloads ${ location.reloads }, got ${ after( srv, t ).map( e => e.route ).join( ' ' ) })` );
+	ok( after( srv, t ).map( e => e.route ).join( ' ' ) === 'classic:update_order_review cart', `then one update_order_review and one re-read (got ${ after( srv, t ).map( e => e.route ).join( ' ' ) })` );
 } );
 
 await scenario( 'bridge, submit: a failed order releases the queue and the page catches up with the drawer', async () => {
@@ -1429,7 +1442,7 @@ await scenario( 'checkout lines: a failed remove is not announced as removed; a 
 	await store.whenIdle();
 } );
 
-await scenario( 'checkout: a change that empties the cart reloads the page (WooCommerce\'s empty-cart redirect); not during an order', async () => {
+await scenario( 'checkout: a change that empties the cart goes to the cart page; not during an order', async () => {
 	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: () => 60 } );
 	const { store, checkoutForm } = await freshBridge( 'checkout', srv, { latency: () => 60, initCheckout: true }, { read: true } );
 	await sleep( 400 );
@@ -1438,7 +1451,7 @@ await scenario( 'checkout: a change that empties the cart reloads the page (WooC
 	await store.removeItem( 'a' );
 	await sleep( 300 );
 	await store.whenIdle();
-	ok( location.reloads === 1, `one reload (got ${ location.reloads })` );
+	ok( location.replaced.join( ' ' ) === CART_URL, `the cart page replaces the checkout, once (got ${ location.replaced.join( ' ' ) || 'none' })` );
 	ok( ! after( srv, t ).some( e => e.route === 'classic:update_order_review' ), `no update_order_review after the emptying change (got ${ after( srv, t ).map( e => e.route ).join( ' ' ) })` );
 	// During an order: no reload until the order has failed and the form is handed back.
 	srv.cart = [ { key: 'b', id: 2, quantity: 1 } ];
@@ -1447,10 +1460,65 @@ await scenario( 'checkout: a change that empties the cart reloads the page (WooC
 	await store.removeItem( 'b' );
 	await sleep( 300 );
 	await store.whenIdle();
-	ok( location.reloads === 1, `none while the order is being placed (got ${ location.reloads - 1 })` );
+	ok( location.replaced.length === 1, `none while the order is being placed (got ${ location.replaced.length - 1 })` );
 	checkoutForm.classList.remove( 'processing' );
 	await sleep( 100 );
-	ok( location.reloads === 2, `then one, once it has failed (got ${ location.reloads - 1 })` );
+	ok( location.replaced.length === 2, `then one, once it has failed (got ${ location.replaced.length - 1 })` );
+} );
+
+await scenario( 'checkout from /kassen/?add-to-cart=: removing the last line lands on the cart page, without re-running the URL', async () => {
+	const srv = fakeServer( [ { key: 'k5', id: 5, quantity: 1 } ], { latency: () => 60 } );
+	const list = fakeList();
+	const { before } = mountLines( list );
+	const { store } = await freshBridge( 'checkout', srv, { latency: () => 60, initCheckout: true }, { read: true, before, href: 'https://shop.test/kassen/?add-to-cart=5' } );
+	await sleep( 400 );
+	await store.whenIdle();
+	await store.removeItem( 'k5' );
+	await sleep( 300 );
+	await store.whenIdle();
+	ok( location.replaced.join( ' ' ) === CART_URL && location.reloads === 0 && location.assigned.length === 0,
+		`location.replace( the cart page ), no reload (it re-sends ?add-to-cart=) and no history entry (replaced ${ location.replaced.join( ' ' ) || 'none' }, ${ location.reloads } reloads, assigned ${ location.assigned.join( ' ' ) || 'none' })` );
+} );
+
+await scenario( 'checkout: a read that finds the cart emptied elsewhere (another tab, an order placed there) goes to the cart page', async () => {
+	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: () => 60, fail: ( r, d, s ) => r === 'cart/remove-item' && s.refuseRemove ? 500 : null } );
+	const list = fakeList();
+	const { before } = mountLines( list );
+	const { store, checkoutForm } = await freshBridge( 'checkout', srv, { latency: () => 60, initCheckout: true }, { read: true, before } );
+	const refill = async () => {
+		srv.cart = [ { key: 'a', id: 1, quantity: 1 } ];
+		await store.fetchCart();
+		await sleep( 300 );
+		await store.whenIdle();
+		location.replaced.length = 0;
+	};
+	await sleep( 400 );
+	await store.whenIdle();
+	srv.cart = [];
+	let t = Date.now();
+	await store.fetchCart();
+	await sleep( 100 );
+	ok( location.replaced.join( ' ' ) === CART_URL && location.reloads === 0, `location.replace( the cart page ) (got ${ location.replaced.join( ' ' ) || 'none' }, ${ location.reloads } reloads)` );
+	ok( ! after( srv, t ).some( e => e.route === 'classic:update_order_review' ), `no update_order_review, which would answer "session expired" (got ${ after( srv, t ).map( e => e.route ).join( ' ' ) })` );
+	// While an order is being placed here, it waits for the form to be handed back.
+	await refill();
+	checkoutForm.classList.add( 'processing' );
+	srv.cart = [];
+	await store.fetchCart();
+	await sleep( 100 );
+	ok( location.replaced.length === 0, `not while the order is being placed (got ${ location.replaced.length })` );
+	checkoutForm.classList.remove( 'processing' );
+	await sleep( 100 );
+	ok( location.replaced.join( ' ' ) === CART_URL, `then, once the form is handed back (got ${ location.replaced.join( ' ' ) || 'none' })` );
+	// A read that answers while a remove of the last line is pending shows no lines; the remove fails: stay.
+	await refill();
+	srv.refuseRemove = true;
+	const read = store.fetchCart();
+	store.removeItem( 'a' ).catch( () => {} );
+	await read;
+	await sleep( 300 );
+	await store.whenIdle();
+	ok( location.replaced.length === 0 && qty( store.getState(), 'a' ) === 1, `a read under a pending remove that then fails: no leaving (got ${ location.replaced.join( ' ' ) || 'none' }, a=${ qty( store.getState(), 'a' ) })` );
 } );
 
 await scenario( 'checkout lines: a read that changes the lines on every refresh triggers one refresh, not a loop', async () => {
@@ -1561,6 +1629,65 @@ await scenario( 'seed: cart-init applies it after the extension modules\' normal
 		ok( box?.children[ 0 ]?.key === 'c1' && state.items.length === 1, `the box carries c1, which is not a line of its own (box children ${ box?.children.map( c => c.key ) }, lines ${ state?.items.map( i => i.key ) })` );
 	} finally {
 		window.leanCartConfig = config;
+	}
+} );
+
+// A module that fails to load, as a 404, a dropped connection or a content blocker makes it: a resolve hook
+// sends the import of `modules/<name>.js` to a missing file when the importing module's URL carries
+// ?broken=<name>, and passes the marker on to the rest of that module graph (fresh module instances).
+register( 'data:text/javascript,' + encodeURIComponent( `export async function resolve( specifier, context, next ) {
+	const broken = context.parentURL && new URL( context.parentURL ).searchParams.get( 'broken' );
+	if ( ! broken ) return next( specifier, context );
+	if ( specifier.endsWith( '/' + broken + '.js' ) ) return { url: 'file:///nonexistent/' + broken + '.js', shortCircuit: true };
+	const resolved = await next( specifier, context );
+	return { ...resolved, url: resolved.url.split( '?' )[ 0 ] + '?broken=' + broken };
+}` ) );
+
+await scenario( 'the bridge and the checkout lines import nothing themselves (a dynamic import of a module with imports resolves after the checkout\'s DOM-ready scripts)', async () => {
+	for ( const name of [ 'classic-pages', 'checkout-lines' ] ) {
+		const src = readFileSync( path.join( jsDir, 'modules', name + '.js' ), 'utf8' );
+		ok( ! /^\s*import\b|\bimport\s*\(\s*['"`]/m.test( src ), `${ name }.js has no import` );
+	}
+} );
+
+await scenario( 'cart-init starts the checkout lines once the bridge runs; a classic-page module that fails to load leaves the drawer working, and without the lines module the bridge runs on', async () => {
+	const config = window.leanCartConfig;
+	for ( const broken of [ 'none', 'classic-pages', 'checkout-lines' ] ) {
+		const when = broken === 'none' ? 'every module loads' : broken + '.js fails to load';
+		const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: () => 30 } );
+		globalThis.document = new EventTarget();
+		document.createElement = () => ( { set innerHTML( v ) { this.value = v; } } );
+		document.cookie = 'wp_woocommerce_session_x=1';
+		document.querySelectorAll = () => [];
+		globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+		globalThis.addEventListener = () => {};
+		const jq = fakeJQuery( srv, 'checkout' );
+		let prefilters = 0;
+		const prefilter = jq.$.ajaxPrefilter;
+		jq.$.ajaxPrefilter = ( fn ) => prefilter( fn, prefilters++ );
+		document.activeElement = null;
+		const list = fakeList();
+		mountLines( list ).before( null, jq );
+		globalThis.location = fakeLocation( 'https://shop.test/kassen/' );
+		setPage( { jQuery: jq.$, checkout: true, dom: jq.dom } );
+		window.leanCart = undefined;
+		window.leanCartConfig = { ...config, cartUrl: CART_URL, checkoutUrl: '', modules: {} };
+		try {
+			await import( pathToFileURL( path.join( jsDir, 'cart-init.js' ) ).href + '?broken=' + broken );
+			jq.ready();
+			await sleep( 300 );
+			const store = window.leanCart?.store;
+			ok( !! store, `${ when }: cart-init still runs (window.leanCart ${ store ? 'set' : 'missing' })` );
+			await store?.whenIdle();
+			ok( qty( store?.getState(), 'a' ) === 1, `${ when }: the drawer has the cart (got ${ JSON.stringify( store?.getState()?.items.map( i => i.key ) ) })` );
+			await store?.changeQuantity( 'a', 1 );
+			ok( lines( srv.cart ) === 'a=2', `${ when }: a drawer change is sent (server ${ lines( srv.cart ) })` );
+			ok( ( prefilters === 1 ) === ( broken !== 'classic-pages' ), `${ when }: the bridge ${ broken === 'classic-pages' ? 'is not' : 'is' } queueing WooCommerce's requests (${ prefilters } prefilters)` );
+			// The lines only with the bridge: their changes leave the totals blocked until its refresh.
+			ok( /data-cart-item-key="a"/.test( list.html ) === ( broken === 'none' ), `${ when }: the checkout lines ${ broken === 'none' ? 'show' : 'do not start' } (${ list.sets } paints)` );
+		} finally {
+			window.leanCartConfig = config;
+		}
 	}
 } );
 

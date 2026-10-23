@@ -9,11 +9,7 @@
 import * as store from './cart-store.js';
 import * as ui from './cart-ui.js';
 import * as add from './cart-add.js';
-// Static: on the shortcode checkout the bridge and the checkout lines must be
-// running when the store is seeded with the page's cart. A dynamic import()
-// resolves behind the page's DOM-ready scripts, 0.2–0.4 s later, and the
-// shopper sees WooCommerce's rows swap for Lean Cart's lines.
-import * as classicPages from './modules/classic-pages.js';
+import { wait } from './cart-api.js';
 
 const config = window.leanCartConfig;
 
@@ -182,23 +178,30 @@ if ( config.modules.subliumSubscriptions ) {
 	extensions.push( import( './modules/sublium-subscriptions.js' ).then( m => m.init( store ) ) );
 }
 
+// WooCommerce's classic cart page and shortcode checkout run their own jQuery
+// cart requests; the bridge keeps them and the drawer in step. Loaded where
+// cart.js or checkout.js runs; the module checks the page markup itself.
+// The shortcode checkout's order review lines, where PHP printed their mount,
+// are fetched beside it and start once it runs (it refreshes the totals after
+// their changes). Dynamic imports, so that either failing to load (404,
+// network, content blocker) leaves the drawer working, and WooCommerce's rows
+// in the review. The checkout modulepreloads them, and they import nothing
+// themselves (what they need is passed in), so they run with the seed.
+if ( window.jQuery && ( window.wc_checkout_params || window.wc_cart_params ) ) {
+	const read = hasSession && classicCheckout;
+	const lines = classicCheckout && document.querySelector( '[data-lean-cart="checkout-lines"]' ) && import( './modules/checkout-lines.js' );
+	const bridge = import( './modules/classic-pages.js' ).then( m => m.init( store, window.jQuery, { cartUrl: config.cartUrl, read, wait } ) );
+	bridge.catch( () => read && store.fetchCart() );
+	if ( lines ) {
+		extensions.push( Promise.all( [ lines, bridge ] ).then( ( [ m ] ) => m.init( store, window.jQuery, ui ) ).catch( () => {} ) );
+	}
+}
+
 // The cart the page was rendered with (the shortcode checkout prints it), once
 // the modules' normalizers are in: without them a Mix-and-Match box's contents
 // would show as lines of their own.
 if ( config.cart ) {
 	Promise.allSettled( extensions ).then( () => store.seed( config.cart ) );
-}
-
-// WooCommerce's classic cart page and shortcode checkout run their own jQuery
-// cart requests; the bridge keeps them and the drawer in step. Started where
-// cart.js or checkout.js runs; the module checks the page markup itself.
-if ( window.jQuery && ( window.wc_checkout_params || window.wc_cart_params ) ) {
-	const read = hasSession && classicCheckout;
-	try {
-		classicPages.init( store, window.jQuery, { cartUrl: config.cartUrl, read } );
-	} catch {
-		if ( read ) store.fetchCart();
-	}
 }
 
 // ── 6. Public API ───────────────────────────────────────────────

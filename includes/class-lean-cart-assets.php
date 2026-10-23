@@ -13,8 +13,6 @@ class Lean_Cart_Assets {
 
 	private string $js_ver;
 
-	private bool $seeded = false; // the page carries the cart (leanCartConfig.cart)
-
 	public function __construct() {
 		$this->js_ver = $this->compute_js_ver();
 
@@ -72,12 +70,11 @@ class Lean_Cart_Assets {
 			[ 'strategy' => 'defer', 'in_footer' => true ]
 		);
 
-		$config       = $this->build_config();
-		$this->seeded = ! empty( $config['cart'] );
+		$config = $this->build_config();
 
 		wp_add_inline_script(
 			'kaupang-lean-cart-init',
-			// JSON_HEX_TAG: shop text in the config (product names, the checkout's cart) can't close the script.
+			// JSON_HEX_TAG: shop text in the config (i18n strings from filters) can't close the script.
 			'window.leanCartConfig = ' . wp_json_encode( $config, JSON_HEX_TAG ) . ';',
 			'before'
 		);
@@ -182,9 +179,10 @@ class Lean_Cart_Assets {
 		echo '<script type="importmap">' . wp_json_encode( [ 'imports' => $imports ] ) . '</script>' . "\n";
 
 		// A page that carries the cart paints its lines as soon as the modules
-		// run: fetch them all now instead of one import after the other.
+		// run: fetch them all now (cart-init imports the bridge, the lines and the
+		// extensions dynamically) instead of one import after the other.
 		// ponytail: all of Lean Cart's modules, also extensions this shop lacks (a few KB).
-		if ( $this->seeded ) {
+		if ( Lean_Cart_Hooks::seeds_checkout() ) {
 			foreach ( array_intersect_key( $imports, $defaults ) as $url ) {
 				echo '<link rel="modulepreload" href="' . esc_url( $url ) . '">' . "\n";
 			}
