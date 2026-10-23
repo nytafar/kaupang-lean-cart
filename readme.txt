@@ -4,7 +4,7 @@ Tags: woocommerce, store-api, cart, mini-cart, developer-friendly
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.2.2
+Stable tag: 0.2.3
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -204,6 +204,27 @@ Create a PHP module class in `includes/modules/` that hooks into `kaupang/lean-c
 No screenshots. Lean Cart is a headless cart layer with no admin interface — all visual output is controlled by your theme.
 
 == Changelog ==
+
+= 0.2.3 – 2026-10-24 =
+
+**Added**
+* The shortcode checkout's order review shows Lean Cart's item lines: the drawer's line markup with `+`, `−` and remove, all through the cart's queue, so the shopper can edit the order where they review it. Coupons, shipping, fees, VAT, totals and payment stay WooCommerce's and refresh through `update_order_review` after each change; the totals are marked as updating until then. Lines show their subtotal before coupons, as WooCommerce's rows do. WooCommerce's own rows stay until Lean Cart has painted its lines (and without JS). Focus stays on the control used (or the nearest one that can take it), and a screen-reader status reads the new quantity or the removal. Mix-and-Match box contents are listed under the box without controls. Not on FunnelKit checkout pages, which have their own summary. On by default; `add_filter( 'kaupang/lean-cart/checkout_lines', '__return_false' )` keeps WooCommerce's rows. New strings `checkoutLines`, `lineQuantity`, `lineRemoved` in `kaupang/lean-cart/i18n`.
+* `store.invalidate()`: the cart changed outside the store; the next quantity change re-reads it in its own turn. Additive. Normalized items carry `lineSubtotal`.
+* Lean Cart's line buttons are `type="button"`, so a line inside a form never submits it.
+* The shortcode checkout carries the cart (`leanCartConfig.cart`, WooCommerce's own Store API hydration as its block checkout uses), and the store starts from it (`store.seed()`, additive), so the checkout lines paint as soon as Lean Cart's modules run, about 30 ms after DOMContentLoaded on staging, instead of after the first cart read 2–3 s in. The modules are `modulepreload`ed on that page. The seed is read in the footer, from the cart the shortcode has calculated, and leaves the classic checkout as without it on WooCommerce 10.x and 11.x: it never calculates the cart itself (that would be in block mode: another default shipping method saved to the session, shipping hidden until an address is entered), and it puts back the cart context (WooCommerce before 11.1 leaves it on `store-api`), the shipping packages, the session (notices, chosen shipping method) and the Store API nonce check on every exit, also when the route throws an `\Error`. It carries only what the store's normalizers read: no addresses, shipping rates, payment methods, cross-sells or descriptions. `tools/check-seed.php` (`wp eval-file`) proves it.
+* The drawer keeps keyboard focus across a repaint, as the checkout lines do: on the control used, or the nearest one that can take it; with no line left, the empty state's link. A list whose markup did not change is not repainted.
+
+**Changed**
+* `modules/classic-pages.js` and `modules/checkout-lines.js` take what they used to import from `cart-init.js` (`classic-pages` `init()`'s `wait` option, `checkout-lines` `init()`'s third argument), and `cart-init.js` imports them side by side and starts the lines once the bridge runs. A dynamic import of a module that imports others resolved behind the checkout's DOM-ready scripts (0.2 s later); without imports both resolve in one step, with the seed. Both stay dynamic imports, so one that fails to load (404, network, content blocker) leaves the drawer working on every page, and the checkout keeps WooCommerce's rows (and, without the lines module, the bridge).
+
+**Fixed**
+* Prices with øre show both decimals ("178,20 kr", was "178,2 kr"); whole amounts stay short ("179 kr"). Drawer, checkout lines and totals.
+* Product text in the drawer's and checkout lines' markup is escaped for attributes too (quotes in `aria-label`, `alt`, `href`): a name with `"` could break the markup or add an attribute.
+* The cart script loads as a module also when the inline config contains `type=` (a product description in the checkout's cart, or an i18n string); only the entry point's own tag gets `type="module"`.
+* Shortcode checkout: a change from the summary or the drawer that empties the cart, or a read that finds it emptied (another tab, an order placed there), replaces the checkout with the cart page (`location.replace()`); it used to end in "Beklager, økten din har utløpt" with no form left. Not a reload, which re-ran an `?add-to-cart=` in the checkout's URL and put the product back, and no history entry leads back to the stale checkout.
+* Classic cart page: when the in-turn re-read of an invalidated cart fails, the quantity change is sent from the cart the store has (as before), instead of being dropped after holding the queue for the 10 s write-settle wait.
+* Checkout lines: Enter or Space on a focused line button while the order is being placed does nothing (blockUI's overlay stops only the mouse); a failed remove is no longer announced as removed; an error shows only in the region (drawer or summary) that has focus, so it is announced once; a read that changes the lines triggers one totals refresh and the read after it none, so a plugin that changes lines on every calculation cannot loop; the hide rule for WooCommerce's rows is printed with the mount, so it holds with `kaupang/lean-cart/disable_styles` (items were listed twice).
+* Classic cart page: a drawer `+`/`−` whose write took its turn after a cart-changing classic request (Update cart 2→3, then `+` within the debounce) counted from the cart read before that request and lost the change (ended at 3, not 4). The bridge now invalidates the store's cart when a classic request ends, and the write re-reads the cart in its turn first.
 
 = 0.2.2 – 2026-10-23 =
 

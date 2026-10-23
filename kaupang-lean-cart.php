@@ -3,7 +3,7 @@
  * Plugin Name: Kaupang Lean Cart
  * Plugin URI:  https://github.com/nytafar/kaupang-lean-cart
  * Description: A minimal, modular WooCommerce cart built on the Store API. Replaces legacy cart fragments with a vanilla JS state layer and event-driven UI.
- * Version:     0.2.2
+ * Version:     0.2.3
  * Author:      Lasse Jellum
  * Author URI:  https://jellum.net
  * Text Domain: kaupang-lean-cart
@@ -19,7 +19,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'KAUPANG_LEAN_CART_VERSION', '0.2.2' );
+define( 'KAUPANG_LEAN_CART_VERSION', '0.2.3' );
 define( 'KAUPANG_LEAN_CART_PATH', plugin_dir_path( __FILE__ ) );
 define( 'KAUPANG_LEAN_CART_URL', plugin_dir_url( __FILE__ ) );
 
