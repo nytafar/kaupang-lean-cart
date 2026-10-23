@@ -173,6 +173,9 @@ let confirmed = null;
 const pending = new Map(); // op id → fn( draft ) applying that op optimistically
 let lastId = 0;
 let queue = Promise.resolve();
+const LOCK = 'kaupang-lean-cart'; // Web Lock: tabs of the same shop share one cart session
+
+const sleep = ( ms ) => new Promise( r => setTimeout( r, ms ) );
 
 export function getState() {
 	return state;
@@ -197,15 +200,61 @@ function publish() {
 }
 
 /**
- * Run one Store API call in the queue. Its answer becomes the confirmed cart.
- * On failure the confirmed cart is the server's real one: from the error
- * (WooCommerce attaches it on 409) or a fresh fetch, never a snapshot.
+ * Give `job` the next turn: after every earlier turn in this tab, and under the
+ * cross-tab lock where the browser has one.
+ */
+function takeTurn( job ) {
+	const turn = queue.then( () => navigator.locks?.request ? navigator.locks.request( LOCK, job ) : job() );
+	queue = turn.catch( () => {} );
+	return turn;
+}
+
+/**
+ * Run a Store API call made outside the store (e.g. by a checkout) in the same
+ * queue, so it never overlaps a cart write. Resolves or rejects with the call's
+ * own result. A call that never settles gives up its turn after the request
+ * timeout, so it cannot hold the queue.
+ *
+ * @param {function} call - Returns a promise (the request).
+ */
+export function enqueue( call ) {
+	return new Promise( ( resolve, reject ) => {
+		takeTurn( () => {
+			const result = Promise.resolve().then( call );
+			result.then( resolve, reject );
+			return Promise.race( [ result.catch( () => {} ), sleep( api.REQUEST_TIMEOUT_MS ) ] );
+		} );
+	} );
+}
+
+/**
+ * Resolves once every queued write has settled and no debounced change is
+ * waiting. Await it before leaving the page, or queued writes are lost.
+ */
+export async function whenIdle() {
+	for ( ;; ) {
+		const tail = queue;
+		await tail;
+		if ( tail !== queue ) continue; // more was queued meanwhile
+		if ( ! debounced.size ) return;
+		await sleep( 50 );
+	}
+}
+
+/**
+ * Run one store call in the queue. Its answer becomes the confirmed cart (a
+ * call may answer null: nothing to send). On failure the confirmed cart is the
+ * server's real one: from the error (WooCommerce attaches it on 409) or a
+ * fresh fetch, never a snapshot. Every request here times out (cart-api.js),
+ * so a turn always ends.
  */
 function send( id, call ) {
-	const run = queue.then( async () => {
+	return takeTurn( async () => {
 		try {
 			const raw = await call();
-			confirmed = normalizeCart( raw );
+			if ( raw ) {
+				confirmed = normalizeCart( raw );
+			}
 			return raw;
 		} catch ( err ) {
 			const cart = err?.data?.cart || await api.getCart().catch( () => null );
@@ -218,46 +267,58 @@ function send( id, call ) {
 			publish();
 		}
 	} );
-	queue = run.catch( () => {} );
-	return run;
 }
 
 // ── Debounce map (per item key) ─────────────────────────────────
 
-const debounced = new Map(); // item key → { id, timer, waiters }
+const debounced = new Map(); // item key → { id, delta, timer, waiters }
 const DEBOUNCE_MS = 400;
 
+function clampQuantity( item, quantity ) {
+	const { minimum, maximum } = item.quantityLimits;
+	return Math.min( maximum || 9999, Math.max( minimum || 1, quantity ) );
+}
+
 /**
- * Debounce a quantity write per line. A newer call on the same key replaces
- * the quantity, and every superseded call settles with the write that
+ * Debounce quantity changes per line. Changes add up as a delta, and the
+ * absolute quantity is computed when the write takes its turn, from the
+ * server's latest cart, so a write queued ahead of it (an add that merged into
+ * this line) is kept. Every superseded call settles with the write that
  * carried it.
  */
-function debouncedUpdate( key, quantity ) {
+function debouncedUpdate( key, delta ) {
 	let entry = debounced.get( key );
 	if ( entry ) {
 		clearTimeout( entry.timer );
 	} else {
-		entry = { id: ++lastId, waiters: [] };
+		entry = { id: ++lastId, delta: 0, waiters: [] };
 		debounced.set( key, entry );
-	}
 
-	// Optimistic update.
-	pending.set( entry.id, ( draft ) => {
-		const item = draft.items.find( i => i.key === key );
-		if ( ! item ) return;
-		draft.itemCount += quantity - item.quantity;
-		item.quantity = quantity;
-		item.lineTotal = '...'; // Will be replaced by server response.
-	} );
+		// Optimistic update.
+		pending.set( entry.id, ( draft ) => {
+			const item = draft.items.find( i => i.key === key );
+			if ( ! item ) return;
+			const quantity = clampQuantity( item, item.quantity + entry.delta );
+			draft.itemCount += quantity - item.quantity;
+			item.quantity = quantity;
+			item.lineTotal = '...'; // Will be replaced by server response.
+		} );
+	}
+	entry.delta += delta;
 	publish();
 
 	return new Promise( ( resolve ) => {
 		entry.waiters.push( resolve );
 		entry.timer = setTimeout( () => {
-			debounced.delete( key );
-			send( entry.id, () => api.updateItem( { key, quantity } ) )
+			send( entry.id, () => {
+				const item = confirmed?.items.find( i => i.key === key );
+				if ( ! item ) return null; // the line is gone
+				const quantity = clampQuantity( item, item.quantity + entry.delta );
+				return quantity === item.quantity ? null : api.updateItem( { key, quantity } );
+			} )
 				.catch( err => emit( 'lean-cart:error', err ) )
 				.finally( () => entry.waiters.forEach( settle => settle() ) );
+			debounced.delete( key );
 		}, DEBOUNCE_MS );
 	} );
 }
@@ -322,14 +383,14 @@ export async function addItem( payload, { trigger = null, openDrawer = true } = 
 export async function changeQuantity( key, delta ) {
 	if ( ! state ) return;
 
-	// Find the item and compute new quantity.
+	// Find the item and compute the step within its limits.
 	const item = state.items.find( i => i.key === key );
 	if ( ! item ) return;
 
-	const newQty = Math.max( item.quantityLimits.minimum || 1, item.quantity + delta );
-	if ( newQty === item.quantity ) return;
+	const step = clampQuantity( item, item.quantity + delta ) - item.quantity;
+	if ( ! step ) return;
 
-	await debouncedUpdate( key, newQty );
+	await debouncedUpdate( key, step );
 }
 
 /**

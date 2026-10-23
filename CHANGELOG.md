@@ -9,9 +9,14 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 - The state is the server's latest answer with still-pending optimistic changes replayed on top. An earlier write's response no longer overwrites a newer change.
 - A failed write restores the server's real cart (the cart in a 409 error, otherwise a fresh fetch), not a snapshot from before the op that also undid writes that succeeded meanwhile.
 - A `changeQuantity()` promise superseded by a newer change on the same line now settles with the write that carries it; it used to hang. Removing a line cancels its pending quantity write.
+- Quantity changes are kept as a delta and turned into an absolute quantity when the write takes its turn, from the server's latest cart (within the line's min/max). An add that merged into a line followed by `+` on it no longer loses the add.
+- Every Store API request times out after 20 s. A request that never answers no longer freezes the queue; the store re-fetches the real cart and moves on.
+- Queued calls run under the Web Lock `kaupang-lean-cart` where available, so two tabs of the same shop serialise their writes too.
+- `[data-lean-cart="checkout-url"]` links wait for queued writes (8 s at most) before navigating, so a burst of changes is not lost on the way to checkout.
 
 ### Added
-- `tools/check-cart-queue.mjs`: drives the store against a fake Store API with WooCommerce's lost-update session and controllable latency; exits non-zero on failure.
+- `store.whenIdle()` (resolves once queued writes and debounced changes have landed) and `store.enqueue( fn )` (run your own Store API call in the cart's queue). Additive; the rest of the contract is unchanged.
+- `tools/check-cart-queue.mjs`: drives the store against a fake Store API with WooCommerce's lost-update session, and sets latency, failures, hangs and network errors per request; exits non-zero on failure. Run it with `/root/.nvm/versions/node/v22.21.0/bin/node tools/check-cart-queue.mjs` on the server (any Node 18+). An exception to the suite's PHP-native check rule (conventions §10): the store is browser JavaScript and cannot be driven from PHP.
 
 ## [0.2.0] - 2026-09-29
 

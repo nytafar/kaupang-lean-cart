@@ -123,6 +123,18 @@ document.addEventListener( 'click', ( e ) => {
 	}
 } );
 
+// Checkout links: leaving the page drops queued cart writes, so wait until
+// they have landed (8 s at most) before navigating.
+document.addEventListener( 'click', ( e ) => {
+	const link = e.target.closest( '[data-lean-cart="checkout-url"]' );
+	if ( ! link || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey ) return;
+	e.preventDefault();
+	link.setAttribute( 'aria-busy', 'true' );
+	Promise.race( [ store.whenIdle(), new Promise( r => setTimeout( r, 8000 ) ) ] ).then( () => {
+		window.location.href = link.href;
+	} );
+} );
+
 // ── 4. Bridge to theme navigation ──────────────────────────────
 //
 // The lean-cart:open event requests the cart drawer to open.

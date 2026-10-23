@@ -76,6 +76,11 @@ The plugin emits a `lean-cart:open` event when an item is added. If your theme e
     window.leanCart.open()    // Dispatch lean-cart:open event
     window.leanCart.close()   // Dispatch lean-cart:close event
 
+    window.leanCart.store.whenIdle()     // Resolves once queued writes and debounced changes have landed
+    window.leanCart.store.enqueue( fn )  // Run your own Store API call (fn returns its promise) in the cart's queue
+
+**One write queue.** WooCommerce saves the cart session whole per request, so overlapping Store API writes lose updates. Every store call goes through one queue, and under the Web Lock `kaupang-lean-cart` where the browser has it (tabs of a shop share one session). Each request times out after 20 s, so the queue always moves on. Code that writes to the Store API itself should pass the call through `store.enqueue()` and then `refresh()`. Before leaving the page with pending changes (e.g. to checkout), await `store.whenIdle()` with a deadline. Lean Cart's own `[data-lean-cart="checkout-url"]` links already do.
+
 == Installation ==
 
 1. Upload the `kaupang-lean-cart` folder to `wp-content/plugins/`.
@@ -152,9 +157,12 @@ Self-check: `wp eval-file wp-content/plugins/kaupang-lean-cart/tools/check-notic
 
 = Write queue check =
 
-    node tools/check-cart-queue.mjs   # Node 18+, no dependencies; exits non-zero on failure
+    # on the GridPane server (Node 22, outside the web root); any Node 18+ works, no dependencies
+    /root/.nvm/versions/node/v22.21.0/bin/node tools/check-cart-queue.mjs
 
-It drives `cart-store.js` against a fake Store API with WooCommerce's lost-update session and controllable latency. It covers: overlapping writes, older responses, rollback after a failure, and superseded quantity promises.
+It drives `cart-store.js` against a fake Store API with WooCommerce's lost-update session, and sets latency, failures, hangs and network errors per request. It exits non-zero on failure. It covers: overlapping writes, older responses, add-merge then `+`, remove during a pending change, rollback (409 cart, fresh fetch, failed fetch, network error), timeouts, coupon/fetch order, a Mix-and-Match box, the event contract, two tabs, `whenIdle()` and `enqueue()`.
+
+This is an exception to the suite rule of one PHP-native check (conventions §10): the store is browser JavaScript and cannot be driven from PHP. `tools/check-notices.php` remains the PHP check.
 
 == Frequently Asked Questions ==
 

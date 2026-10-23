@@ -8,6 +8,19 @@
 const { storeApiBase } = window.leanCartConfig;
 let nonce = window.leanCartConfig.nonce;
 
+// A request that never answers would hold the store's write queue; abort it so
+// the store re-fetches the real cart and moves on.
+export const REQUEST_TIMEOUT_MS = 20000;
+
+function timeoutSignal() {
+	if ( AbortSignal.timeout ) {
+		return AbortSignal.timeout( REQUEST_TIMEOUT_MS );
+	}
+	const controller = new AbortController();
+	setTimeout( () => controller.abort(), REQUEST_TIMEOUT_MS );
+	return controller.signal;
+}
+
 /**
  * Update the stored nonce from a response's Nonce header.
  * The Store API returns a fresh nonce on every cart route response.
@@ -34,6 +47,17 @@ function normalizeError( data, response ) {
 }
 
 /**
+ * A failed or timed-out transport. A timeout carries no message, so the UI
+ * shows its own update-error text.
+ */
+function networkError( err ) {
+	if ( err?.name === 'TimeoutError' || err?.name === 'AbortError' ) {
+		return { code: 'request_timeout', message: '', data: null };
+	}
+	return { code: 'network_error', message: err?.message || 'Network request failed', data: null };
+}
+
+/**
  * Core request method.
  *
  * @param {string} endpoint  - Relative to storeApiBase (e.g., 'cart').
@@ -44,6 +68,7 @@ function normalizeError( data, response ) {
 async function request( endpoint, { method = 'GET', body = null } = {}, isRetry = false ) {
 	const url = storeApiBase + endpoint;
 	const headers = { 'Nonce': nonce };
+	const signal = timeoutSignal();
 
 	if ( body ) {
 		headers['Content-Type'] = 'application/json';
@@ -57,9 +82,10 @@ async function request( endpoint, { method = 'GET', body = null } = {}, isRetry 
 			credentials: 'include',
 			cache: 'no-store',
 			body: body ? JSON.stringify( body ) : null,
+			signal,
 		} );
 	} catch ( err ) {
-		throw { code: 'network_error', message: err.message || 'Network request failed', data: null };
+		throw networkError( err );
 	}
 
 	updateNonce( response );
@@ -72,6 +98,7 @@ async function request( endpoint, { method = 'GET', body = null } = {}, isRetry 
 				headers: { 'Nonce': nonce },
 				credentials: 'include',
 				cache: 'no-store',
+				signal,
 			} );
 			updateNonce( refresh );
 		} catch {
@@ -80,7 +107,12 @@ async function request( endpoint, { method = 'GET', body = null } = {}, isRetry 
 		return request( endpoint, { method, body }, true );
 	}
 
-	const data = await response.json();
+	let data;
+	try {
+		data = await response.json();
+	} catch ( err ) {
+		throw networkError( err );
+	}
 
 	if ( ! response.ok ) {
 		throw normalizeError( data, response );
