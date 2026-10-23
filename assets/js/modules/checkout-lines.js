@@ -13,29 +13,9 @@
  * hides those only next to a visible mount.
  */
 
-import { renderItem } from '../cart-ui.js';
+import { renderItem, paintLines } from '../cart-ui.js';
 
 const { i18n } = window.leanCartConfig;
-const CONTROL = { increase: '[data-cart-action="increase"]', decrease: '[data-cart-action="decrease"]', remove: '[data-cart-action="remove"]', title: '.cart-item-title' };
-
-/**
- * Where focus goes after the lines re-render, given the control that had it
- * ({ key, action, index }) and the new top-level lines: the same control if it
- * can still take focus, else the line's other enabled control; for a line that
- * is gone, the remove button of the line now in its place (or the last one).
- * Null when no line is left.
- */
-export function focusTarget( had, items ) {
-	const item = items.find( i => i.key === had.key );
-	if ( ! item ) {
-		const next = items[ Math.min( had.index, items.length - 1 ) ];
-		return next ? { key: next.key, action: 'remove' } : null;
-	}
-	const { minimum, maximum } = item.quantityLimits;
-	const enabled = { decrease: item.quantity > ( minimum || 1 ), increase: item.quantity < ( maximum || 9999 ), remove: true, title: true };
-	const action = [ had.action, had.action === 'increase' ? 'decrease' : 'increase', 'remove' ].find( a => enabled[ a ] );
-	return { key: item.key, action };
-}
 
 // What the review's totals have to agree with: the lines and their quantities.
 const linesOf = ( state ) => JSON.stringify( state.items.map( i => [ i.key, i.quantity, i.children.map( c => [ c.key, c.quantity ] ) ] ) );
@@ -53,35 +33,35 @@ export function init( store, $ ) {
 	const status = root.querySelector( '[data-lean-cart="checkout-status"]' );
 	const form = root.closest( 'form.checkout' );
 	list.setAttribute( 'aria-label', i18n.checkoutLines || 'Varer i bestillingen' );
-	let html = null;
-	let last = null;  // the state shown before this one
-	let asked = null; // the summary control the shopper used last: { key, action, title }
+	let last = null;    // the state shown before this one
+	let asked = null;   // the summary control the shopper used last: { key, action, title }
+	let chased = false; // the last read triggered a refresh
 
 	function render( state ) {
 		const items = state.items.filter( i => ! i.isChild );
-		const next = items.map( i => renderItem( i, i.lineSubtotal ) ).join( '' );
-		if ( next === html ) return; // nothing to repaint; focus stays put
-		const at = document.activeElement;
-		const row = at && list.contains( at ) ? at.closest( '[data-cart-item-key]' ) : null;
-		const had = row && { key: row.dataset.cartItemKey, action: at.dataset.cartAction || 'title', index: [ ...list.children ].indexOf( row ) };
-		list.innerHTML = html = next;
-		if ( items.length ) root.hidden = false; // from now on the lines are Lean Cart's, empty or not
-		if ( had ) {
-			const to = focusTarget( had, items );
-			( to ? list.querySelector( `[data-cart-item-key="${ CSS.escape( to.key ) }"] ${ CONTROL[ to.action ] }` ) : root )?.focus();
+		if ( paintLines( list, items.map( i => renderItem( i, i.lineSubtotal ) ).join( '' ), items, root ) && items.length ) {
+			root.hidden = false; // from now on the lines are Lean Cart's, empty or not
 		}
 	}
 
 	function announce( state ) {
 		if ( ! asked || ! status ) return;
 		const item = state.items.find( i => i.key === asked.key );
-		status.textContent = item && asked.action !== 'remove'
-			? format( i18n.lineQuantity || '%1$s, antall %2$s', item.title, item.quantity )
-			: format( i18n.lineRemoved || '%s er fjernet', asked.title );
+		// A remove that failed says nothing here: the error alert says it.
+		status.textContent = ! item
+			? format( i18n.lineRemoved || '%s er fjernet', asked.title )
+			: asked.action === 'remove' ? '' : format( i18n.lineQuantity || '%1$s, antall %2$s', item.title, item.quantity );
 		asked = null;
 	}
 
 	list.addEventListener( 'click', ( e ) => {
+		// While the order is being placed, nothing may change the cart. The form's
+		// blockUI overlay stops the mouse, not Enter or Space on a focused button.
+		if ( form?.classList.contains( 'processing' ) ) {
+			e.preventDefault();
+			e.stopPropagation();
+			return;
+		}
 		const btn = e.target.closest( '[data-cart-action]' );
 		const row = btn?.closest( '[data-cart-item-key]' );
 		if ( row ) asked = { key: row.dataset.cartItemKey, action: btn.dataset.cartAction, title: row.querySelector( '.cart-item-title' )?.textContent || '' };
@@ -93,10 +73,11 @@ export function init( store, $ ) {
 		if ( source === 'read' ) {
 			// The lines changed under a read (another tab): bring the totals in
 			// step. Not while an order is being placed. The refresh's own re-read
-			// shows the same lines, so this stops there.
-			if ( last && linesOf( last ) !== linesOf( state ) && ! form?.classList.contains( 'processing' ) ) {
-				$( document.body ).trigger( 'update_checkout' );
-			}
+			// shows the same lines; if it does not (a plugin that changes lines on
+			// every totals calculation), it triggers nothing: one refresh per run.
+			const changed = last && linesOf( last ) !== linesOf( state ) && ! form?.classList.contains( 'processing' );
+			if ( changed && ! chased ) $( document.body ).trigger( 'update_checkout' );
+			chased = changed && ! chased;
 		} else {
 			// The totals describe the lines from before this change until the
 			// bridge's update_order_review replaces them: mark them as updating,

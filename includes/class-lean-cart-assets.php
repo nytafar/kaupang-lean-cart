@@ -13,6 +13,8 @@ class Lean_Cart_Assets {
 
 	private string $js_ver;
 
+	private bool $seeded = false; // the page carries the cart (leanCartConfig.cart)
+
 	public function __construct() {
 		$this->js_ver = $this->compute_js_ver();
 
@@ -70,11 +72,13 @@ class Lean_Cart_Assets {
 			[ 'strategy' => 'defer', 'in_footer' => true ]
 		);
 
-		$config = $this->build_config();
+		$config       = $this->build_config();
+		$this->seeded = ! empty( $config['cart'] );
 
 		wp_add_inline_script(
 			'kaupang-lean-cart-init',
-			'window.leanCartConfig = ' . wp_json_encode( $config ) . ';',
+			// JSON_HEX_TAG: shop text in the config (product names, the checkout's cart) can't close the script.
+			'window.leanCartConfig = ' . wp_json_encode( $config, JSON_HEX_TAG ) . ';',
 			'before'
 		);
 
@@ -176,6 +180,15 @@ class Lean_Cart_Assets {
 		$imports = apply_filters( 'kaupang/lean-cart/importmap_imports', $defaults );
 
 		echo '<script type="importmap">' . wp_json_encode( [ 'imports' => $imports ] ) . '</script>' . "\n";
+
+		// A page that carries the cart paints its lines as soon as the modules
+		// run: fetch them all now instead of one import after the other.
+		// ponytail: all of Lean Cart's modules, also extensions this shop lacks (a few KB).
+		if ( $this->seeded ) {
+			foreach ( array_intersect_key( $imports, $defaults ) as $url ) {
+				echo '<link rel="modulepreload" href="' . esc_url( $url ) . '">' . "\n";
+			}
+		}
 	}
 
 	/**
@@ -187,14 +200,19 @@ class Lean_Cart_Assets {
 	 * and silently break ES module imports.
 	 */
 		public function add_module_type( string $tag, string $handle ): string {
-			if ( 'kaupang-lean-cart-init' === $handle ) {
-				// Replace existing type attribute or add type="module" for ES module support
-				if ( strpos( $tag, 'type=' ) !== false ) {
-					$tag = preg_replace( '/type="[^"]*"/', 'type="module"', $tag );
-				} else {
-					$tag = str_replace( '<script ', '<script type="module" ', $tag );
-				}
+			if ( 'kaupang-lean-cart-init' !== $handle ) {
+				return $tag;
 			}
-			return $tag;
+			// Only the entry point's own <script> tag: $tag also holds the inline
+			// config, whose shop text (product descriptions) may contain "type=".
+			return (string) preg_replace_callback(
+				'/<script\b[^>]*\bid=(["\'])kaupang-lean-cart-init-js\1[^>]*>/',
+				function ( $m ) {
+					return preg_match( '/\stype=/', $m[0] )
+						? preg_replace( '/\stype=(["\'])[^"\']*\1/', ' type="module"', $m[0] )
+						: str_replace( '<script', '<script type="module"', $m[0] );
+				},
+				$tag
+			);
 		}
 }

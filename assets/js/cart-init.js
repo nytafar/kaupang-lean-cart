@@ -159,20 +159,29 @@ document.addEventListener( 'lean-cart:open', () => {
 
 // ── 5. Load extension modules conditionally ─────────────────────
 
+const extensions = [];
+
 if ( config.modules.subscriptions ) {
-	import( './modules/subscriptions.js' ).then( m => m.init( store ) );
+	extensions.push( import( './modules/subscriptions.js' ).then( m => m.init( store ) ) );
 }
 
 if ( config.modules.mixAndMatch ) {
-	import( './modules/mix-and-match.js' ).then( m => m.init( store ) );
+	extensions.push( import( './modules/mix-and-match.js' ).then( m => m.init( store ) ) );
 }
 
 if ( config.modules.allProductsSubs ) {
-	import( './modules/all-products-subs.js' ).then( m => m.init( store ) );
+	extensions.push( import( './modules/all-products-subs.js' ).then( m => m.init( store ) ) );
 }
 
 if ( config.modules.subliumSubscriptions ) {
-	import( './modules/sublium-subscriptions.js' ).then( m => m.init( store ) );
+	extensions.push( import( './modules/sublium-subscriptions.js' ).then( m => m.init( store ) ) );
+}
+
+// The cart the page was rendered with (the shortcode checkout prints it), once
+// the modules' normalizers are in: without them a Mix-and-Match box's contents
+// would show as lines of their own.
+if ( config.cart ) {
+	Promise.allSettled( extensions ).then( () => store.seed( config.cart ) );
 }
 
 // WooCommerce's classic cart page and shortcode checkout run their own jQuery

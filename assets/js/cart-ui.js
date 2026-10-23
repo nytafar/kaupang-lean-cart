@@ -116,6 +116,52 @@ function renderChildItem( child ) {
 	`;
 }
 
+// ── Painting a list of lines, keeping focus ─────────────────────
+
+const CONTROL = { increase: '[data-cart-action="increase"]', decrease: '[data-cart-action="decrease"]', remove: '[data-cart-action="remove"]', title: '.cart-item-title' };
+
+/**
+ * Where focus goes after the lines re-render, given the control that had it
+ * ({ key, action, index }) and the new top-level lines: the same control if it
+ * can still take focus, else the line's other enabled control; for a line that
+ * is gone, the remove button of the line now in its place (or the last one).
+ * Null when no line is left.
+ */
+export function focusTarget( had, items ) {
+	const item = items.find( i => i.key === had.key );
+	if ( ! item ) {
+		const next = items[ Math.min( had.index, items.length - 1 ) ];
+		return next ? { key: next.key, action: 'remove' } : null;
+	}
+	const { minimum, maximum } = item.quantityLimits;
+	const enabled = { decrease: item.quantity > ( minimum || 1 ), increase: item.quantity < ( maximum || 9999 ), remove: true, title: true };
+	const action = [ had.action, had.action === 'increase' ? 'decrease' : 'increase', 'remove' ].find( a => enabled[ a ] );
+	return { key: item.key, action };
+}
+
+const painted = new WeakMap(); // list → the markup it was last given
+
+/**
+ * Put `html` (the markup of the top-level lines `items`) into `list`. Not when
+ * it already shows that markup, so focus and screen readers are left alone.
+ * If focus was inside the list, it goes back to the same control, or the
+ * nearest one that can take it (focusTarget); with no line left, to
+ * `fallback`. Returns whether it repainted.
+ */
+export function paintLines( list, html, items, fallback = null ) {
+	if ( painted.get( list ) === html ) return false;
+	const at = document.activeElement;
+	const row = at && list.contains( at ) ? at.closest( '[data-cart-item-key]' ) : null;
+	const had = row && { key: row.dataset.cartItemKey, action: at.dataset.cartAction || 'title', index: [ ...list.children ].indexOf( row ) };
+	list.innerHTML = html;
+	painted.set( list, html );
+	if ( had ) {
+		const to = focusTarget( had, items );
+		( to ? list.querySelector( `[data-cart-item-key="${ CSS.escape( to.key ) }"] ${ CONTROL[ to.action ] }` ) : fallback )?.focus();
+	}
+	return true;
+}
+
 // ── Totals rendering ────────────────────────────────────────────
 
 function renderRecurringTotals( recurringTotals = [] ) {
@@ -170,13 +216,17 @@ function render( state ) {
 	const hasItems = state.items.length > 0;
 	const topLevelItems = state.items.filter( i => ! i.isChild );
 
+	// Before the items: the empty state must be shown before focus can go to it.
+	paintCount( state.itemCount );
+
 	// Items
 	const itemsHtml = hasItems
 		? topLevelItems.map( item => renderItem( item ) ).join( '' )
 		: '';
 
 	mountPoints.items.forEach( el => {
-		el.innerHTML = itemsHtml;
+		// With no line left, focus goes to the drawer's empty state link, if any.
+		paintLines( el, itemsHtml, topLevelItems, el.parentElement?.querySelector( '[data-lean-cart="empty"] a' ) );
 		el.setAttribute( 'role', 'list' );
 		el.setAttribute( 'aria-live', 'polite' );
 	} );
@@ -185,8 +235,6 @@ function render( state ) {
 	mountPoints.totals.forEach( el => {
 		el.innerHTML = hasItems ? renderTotals( state ) : '';
 	} );
-
-	paintCount( state.itemCount );
 
 	// Loading state
 	mountPoints.loading.forEach( el => {
@@ -220,8 +268,14 @@ export function paintCount( count ) {
 	} );
 }
 
+/**
+ * Show an error in the Lean Cart region the shopper is in (the drawer or the
+ * checkout lines: two role="alert" mounts would announce it twice); in every
+ * one when focus is in none.
+ */
 function showError( message ) {
-	mountPoints.error.forEach( el => {
+	const here = [ ...mountPoints.error ].filter( el => el.closest( '.lean-cart' )?.contains( document.activeElement ) );
+	( here.length ? here : mountPoints.error ).forEach( el => {
 		el.textContent = message;
 		el.hidden = false;
 		clearTimeout( el._errorTimer );
@@ -254,9 +308,8 @@ export function init() {
 
 // ── Utilities ───────────────────────────────────────────────────
 
-function esc( str ) {
-	if ( typeof str !== 'string' ) return String( str ?? '' );
-	const div = document.createElement( 'div' );
-	div.textContent = str;
-	return div.innerHTML;
+// For text and for attribute values alike (aria-label, alt, href, data-*).
+const ENTITY = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+export function esc( str ) {
+	return String( str ?? '' ).replace( /[&<>"']/g, c => ENTITY[ c ] );
 }

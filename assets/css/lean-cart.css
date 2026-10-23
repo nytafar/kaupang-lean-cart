@@ -375,16 +375,8 @@
 
 /* The shortcode checkout's order review: Lean Cart's lines sit before
    WooCommerce's table and replace its item rows once they show (the mount
-   loses [hidden] then). !important: this is a state, like [hidden], and
-   themes lay these rows out with long selectors. */
-
-.lean-cart--checkout[hidden] {
-	display: none !important;
-}
-
-.lean-cart--checkout:not([hidden]) ~ .woocommerce-checkout-review-order-table :is(thead, tr.cart_item) {
-	display: none !important;
-}
+   loses [hidden] then). The rules for that state are printed with the mount
+   (Lean_Cart_Hooks::print_checkout_lines), so they hold without this file. */
 
 .lean-cart--checkout {
 	margin-bottom: var(--spacing-s, 12px);

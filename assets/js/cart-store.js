@@ -13,16 +13,19 @@ const config = window.leanCartConfig;
 
 // ── Currency formatter ──────────────────────────────────────────
 
-const formatter = new Intl.NumberFormat( config.currency.locale, {
+// Whole amounts stay short ("179 kr"); any other shows every decimal ("178,20 kr"), as WooCommerce does.
+const formatter = ( digits ) => new Intl.NumberFormat( config.currency.locale, {
 	style: 'currency',
 	currency: config.currency.code,
-	minimumFractionDigits: 0,
-	maximumFractionDigits: config.currency.minorUnit,
+	minimumFractionDigits: digits,
+	maximumFractionDigits: digits,
 } );
+const whole = formatter( 0 );
+const exact = formatter( config.currency.minorUnit );
 
 export function formatPrice( minorUnitValue ) {
 	const divisor = Math.pow( 10, config.currency.minorUnit );
-	return formatter.format( minorUnitValue / divisor );
+	return ( minorUnitValue % divisor ? exact : whole ).format( minorUnitValue / divisor );
 }
 
 // ── Form extractor pipeline ─────────────────────────────────────
@@ -318,6 +321,20 @@ export function invalidate() {
 	outdated = true;
 }
 
+/**
+ * Start from a cart the page was rendered with (a Store API cart response,
+ * leanCartConfig.cart), so the lines paint without waiting for a read. Only
+ * while no answer has come yet; published as a 'read'. Call it once extension
+ * modules have registered their normalizers. The page's own requests may
+ * change the cart after it was rendered, so the next quantity change re-reads.
+ */
+export function seed( raw ) {
+	if ( confirmed || ! raw?.items ) return;
+	confirmed = normalizeCart( raw );
+	outdated = true;
+	publish( 'read' );
+}
+
 // ── Debounce map (per item key) ─────────────────────────────────
 
 const debounced = new Map(); // item key → { id, delta, timer, waiters }
@@ -362,8 +379,12 @@ function debouncedUpdate( key, delta ) {
 			send( entry.id, async () => {
 				if ( outdated ) {
 					// A classic page request changed the cart meanwhile: count from it, not from before it.
-					confirmed = normalizeCart( await api.getCart() );
-					outdated = false;
+					// If that read fails, count from the cart we have and send the change all the same.
+					const raw = await api.getCart().catch( () => null );
+					if ( raw ) {
+						confirmed = normalizeCart( raw );
+						outdated = false;
+					}
 				}
 				const item = confirmed?.items.find( i => i.key === key );
 				if ( ! item ) {

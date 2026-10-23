@@ -23,11 +23,17 @@
  *   On the cart page the form stays blocked until a refresh made after the
  *   last drawer change has replaced it, so it never posts older quantities.
  * - Neither happens while an order is being placed; a failed one catches up.
+ * - A checkout that drawer changes leave with an empty cart reloads, so
+ *   WooCommerce redirects to the cart page as it does for an empty checkout.
  * - Checkout lines: on the checkout the order review's item lines are Lean
  *   Cart's where PHP printed their mount (checkout-lines.js).
  */
 
 import { wait } from '../cart-api.js';
+// Static, not a later import(): the lines must be ready when the store is
+// seeded with the page's cart, not one task later behind the page's DOM-ready
+// scripts (a visible swap of WooCommerce's rows for Lean Cart's).
+import * as checkoutLines from './checkout-lines.js';
 
 // WooCommerce core's classic cart and checkout endpoints. Every one of them
 // loads the cart session and saves it when done.
@@ -97,6 +103,13 @@ export function init( store, $, { cartUrl, read = false } ) {
 		if ( placing() ) return;
 		if ( behind ) {
 			behind = false;
+			// A checkout whose cart a drawer or summary change emptied: update_order_review
+			// would answer "session expired" and leave no form. A reload runs WooCommerce's
+			// empty-cart redirect to the cart page instead.
+			if ( page === 'checkout' && store.getState()?.items.length === 0 ) {
+				location.reload();
+				return;
+			}
 			refreshPage(); // its request makes the drawer re-read after it
 		} else if ( stale && ! open ) {
 			stale = false;
@@ -241,9 +254,12 @@ export function init( store, $, { cartUrl, read = false } ) {
 	}
 
 	// The checkout's order review shows Lean Cart's lines where PHP printed their
-	// mount (kaupang/lean-cart/checkout_lines). If this fails, WooCommerce's rows stay.
+	// mount (kaupang/lean-cart/checkout_lines). If this fails, WooCommerce's rows
+	// stay, and the bridge runs on.
 	if ( page === 'checkout' && document.querySelector( '[data-lean-cart="checkout-lines"]' ) ) {
-		import( './checkout-lines.js' ).then( m => m.init( store, $ ) ).catch( () => {} );
+		try {
+			checkoutLines.init( store, $ );
+		} catch {}
 	}
 
 	document.addEventListener( 'lean-cart:updated', ( e ) => {
