@@ -36,7 +36,8 @@ cart-init.js          Entry point — boots store, UI, modules
   └── modules/        Conditionally loaded extensions
       ├── subscriptions.js
       ├── mix-and-match.js
-      └── all-products-subs.js
+      ├── all-products-subs.js
+      └── classic-pages.js   WooCommerce classic cart page / shortcode checkout bridge
 ```
 
 ### Key design decisions
@@ -182,6 +183,10 @@ add_filter( 'kaupang/lean-cart/live_notices', fn( $live ) => $live || is_page( '
 add_filter( 'kaupang/lean-cart/notice_cookie', fn() => 'my_notice' );
 ```
 
+**Events.** `lean-cart:updated` carries `{ state, source }`. `source` is `'optimistic'` (a change not yet sent), `'write'` (a write's turn ended: the server's answer, or the real cart after a failure) or `'read'` (`fetchCart`). React to cart writes by skipping `'read'`, or a refresh that re-reads will loop.
+
+**Classic cart and checkout pages.** On WooCommerce's classic cart page and `[woocommerce_checkout]` page, cart.js and checkout.js edit the same cart session as the drawer. `modules/classic-pages.js` (loaded only there: a `form.checkout` with `wc_checkout_params`, or the classic cart form with `wc_cart_params`) routes their jQuery requests to WooCommerce core's classic endpoints (`update_order_review`, `checkout`, coupons, `update_shipping_method`, `get_cart_totals`, `add_to_cart`, `remove_from_cart`) and to the cart page URL through `store.enqueue()`. An aborted request keeps its turn until the server has answered (PHP still saves the session). The submit waits for `whenIdle()` and holds the queue until it settles. When drawer changes have landed, the page refreshes once (`update_checkout` / `wc_update_cart`); when classic requests have finished, the drawer re-reads once. Other plugins' own `wc-ajax` endpoints are not queued.
+
 Self-check: `wp eval-file wp-content/plugins/kaupang-lean-cart/tools/check-notices.php`
 
 ### Write queue check
@@ -191,7 +196,7 @@ Self-check: `wp eval-file wp-content/plugins/kaupang-lean-cart/tools/check-notic
 /root/.nvm/versions/node/v22.21.0/bin/node tools/check-cart-queue.mjs
 ```
 
-It drives `cart-store.js` against a fake Store API with WooCommerce's lost-update session, and sets latency, failures, hangs and network errors per request. It exits non-zero on failure. It covers: overlapping writes, older responses, add-merge then `+`, remove during a pending change, rollback (409 cart, fresh fetch, failed fetch, network error), timeouts, coupon/fetch order, a Mix-and-Match box, the event contract, two tabs, `whenIdle()` and `enqueue()`.
+It drives `cart-store.js` against a fake Store API with WooCommerce's lost-update session, and sets latency, failures, hangs and network errors per request. It exits non-zero on failure. It covers: overlapping writes, older responses, add-merge then `+`, remove during a pending change, rollback (409 cart, fresh fetch, failed fetch, network error), timeouts, coupon/fetch order, a Mix-and-Match box, the event contract and `source`, two tabs, `whenIdle()` and `enqueue()`, and the classic pages bridge against a fake jQuery (no overlap with `update_order_review`, one refresh per burst of drawer changes and one re-read per burst of classic requests with no loop, the submit hold and its release, aborts).
 
 This is an exception to the suite rule of one PHP-native check (conventions §10): the store is browser JavaScript and cannot be driven from PHP. `tools/check-notices.php` remains the PHP check.
 

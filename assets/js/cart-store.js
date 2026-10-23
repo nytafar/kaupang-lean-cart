@@ -187,18 +187,24 @@ function emit( name, detail = {} ) {
 	document.dispatchEvent( new CustomEvent( name, { detail } ) );
 }
 
-function commit( newState ) {
+/**
+ * `source` says what changed the state: 'optimistic' (a change not yet sent),
+ * 'write' (a write's turn ended: the server's answer, or the real cart after a
+ * failure) or 'read' (fetchCart). Listeners that react to cart writes, such as
+ * the classic-page bridge, skip 'read' so a refresh never loops.
+ */
+function commit( newState, source ) {
 	state = newState;
-	emit( 'lean-cart:updated', { state } );
+	emit( 'lean-cart:updated', { state, source } );
 }
 
-function publish() {
+function publish( source = 'optimistic' ) {
 	if ( ! confirmed ) return;
 	const draft = structuredClone( confirmed );
 	for ( const apply of pending.values() ) {
 		apply( draft );
 	}
-	commit( draft );
+	commit( draft, source );
 }
 
 /**
@@ -292,7 +298,7 @@ function send( id, call, { read = false } = {} ) {
 			throw err;
 		} finally {
 			pending.delete( id );
-			publish();
+			publish( read ? 'read' : 'write' );
 		}
 	}, { lock: ! read } );
 }

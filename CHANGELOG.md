@@ -4,6 +4,12 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+- WooCommerce's classic cart page and shortcode checkout now cooperate with the drawer. Their jQuery cart and checkout requests take turns in the cart's queue with the drawer's writes, so `update_order_review` no longer saves its older cart over a drawer change. A drawer change refreshes the page once its writes have landed (checkout: `update_checkout`; cart page: `wc_update_cart`, the cart form blocked meanwhile so "Update cart" cannot post stale quantities), and a classic request (Update cart, coupon, remove link, shipping, order review) makes the drawer re-read the cart once. The order submit (`wc-ajax=checkout`) waits for pending drawer changes and holds the queue until it settles. The bridge (`modules/classic-pages.js`) loads only on those pages.
+
+### Added
+- `lean-cart:updated` carries `detail.source`: `'optimistic'`, `'write'` or `'read'` (`fetchCart`). Additive.
+
 ## [0.2.1] - 2026-10-23
 
 ### Fixed
