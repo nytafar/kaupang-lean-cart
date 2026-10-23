@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(grep -rn 'mnm_form\\\\|$classes' '/var/www/staging.myrvann.no/htdocs/wp-content/plugins/woocommerce-mix-and-match-products/includes/*.php')"
-    ]
-  }
-}

@@ -1,2 +1,3 @@
 .gstack/browse-startup-error.log
 .gstack/
+.claude/settings.local.json
