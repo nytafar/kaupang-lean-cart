@@ -1,9 +1,10 @@
 /**
  * Cart Store — single source of truth for cart state.
  *
- * Owns the canonical cart object, optimistic mutations with
- * rollback, a normalizer pipeline for extension modules, and
- * an EventTarget-based event bus dispatched on `document`.
+ * Owns the canonical cart object, one queue that sends every
+ * Store API call in order, optimistic mutations replayed over the
+ * server's latest answer, a normalizer pipeline for extension
+ * modules, and an EventTarget-based event bus on `document`.
  */
 
 import * as api from './cart-api.js';
@@ -158,9 +159,20 @@ function normalizeCart( raw ) {
 }
 
 // ── State ───────────────────────────────────────────────────────
+//
+// WooCommerce saves the cart session as one row per request, so two
+// overlapping Store API writes overwrite each other. Every call therefore
+// runs through one queue: the server sees one cart request at a time, in
+// order. `confirmed` is the server's latest answer; `state` is that answer
+// with every still-pending optimistic change replayed on top, so an earlier
+// write's response never erases a newer change, and a failure drops only
+// its own change.
 
 let state = null;
-let snapshot = null;
+let confirmed = null;
+const pending = new Map(); // op id → fn( draft ) applying that op optimistically
+let lastId = 0;
+let queue = Promise.resolve();
 
 export function getState() {
 	return state;
@@ -175,40 +187,88 @@ function commit( newState ) {
 	emit( 'lean-cart:updated', { state } );
 }
 
-function takeSnapshot() {
-	snapshot = state ? structuredClone( state ) : null;
+function publish() {
+	if ( ! confirmed ) return;
+	const draft = structuredClone( confirmed );
+	for ( const apply of pending.values() ) {
+		apply( draft );
+	}
+	commit( draft );
 }
 
-function rollback() {
-	if ( snapshot ) {
-		commit( snapshot );
-		snapshot = null;
-	}
+/**
+ * Run one Store API call in the queue. Its answer becomes the confirmed cart.
+ * On failure the confirmed cart is the server's real one: from the error
+ * (WooCommerce attaches it on 409) or a fresh fetch, never a snapshot.
+ */
+function send( id, call ) {
+	const run = queue.then( async () => {
+		try {
+			const raw = await call();
+			confirmed = normalizeCart( raw );
+			return raw;
+		} catch ( err ) {
+			const cart = err?.data?.cart || await api.getCart().catch( () => null );
+			if ( cart ) {
+				confirmed = normalizeCart( cart );
+			}
+			throw err;
+		} finally {
+			pending.delete( id );
+			publish();
+		}
+	} );
+	queue = run.catch( () => {} );
+	return run;
 }
 
 // ── Debounce map (per item key) ─────────────────────────────────
 
-const debounceTimers = new Map();
+const debounced = new Map(); // item key → { id, timer, waiters }
 const DEBOUNCE_MS = 400;
 
+/**
+ * Debounce a quantity write per line. A newer call on the same key replaces
+ * the quantity, and every superseded call settles with the write that
+ * carried it.
+ */
 function debouncedUpdate( key, quantity ) {
-	if ( debounceTimers.has( key ) ) {
-		clearTimeout( debounceTimers.get( key ) );
+	let entry = debounced.get( key );
+	if ( entry ) {
+		clearTimeout( entry.timer );
+	} else {
+		entry = { id: ++lastId, waiters: [] };
+		debounced.set( key, entry );
 	}
 
-	return new Promise( ( resolve, reject ) => {
-		const timer = setTimeout( async () => {
-			debounceTimers.delete( key );
-			try {
-				const raw = await api.updateItem( { key, quantity } );
-				resolve( raw );
-			} catch ( err ) {
-				reject( err );
-			}
-		}, DEBOUNCE_MS );
-
-		debounceTimers.set( key, timer );
+	// Optimistic update.
+	pending.set( entry.id, ( draft ) => {
+		const item = draft.items.find( i => i.key === key );
+		if ( ! item ) return;
+		draft.itemCount += quantity - item.quantity;
+		item.quantity = quantity;
+		item.lineTotal = '...'; // Will be replaced by server response.
 	} );
+	publish();
+
+	return new Promise( ( resolve ) => {
+		entry.waiters.push( resolve );
+		entry.timer = setTimeout( () => {
+			debounced.delete( key );
+			send( entry.id, () => api.updateItem( { key, quantity } ) )
+				.catch( err => emit( 'lean-cart:error', err ) )
+				.finally( () => entry.waiters.forEach( settle => settle() ) );
+		}, DEBOUNCE_MS );
+	} );
+}
+
+function cancelDebounce( key ) {
+	const entry = debounced.get( key );
+	if ( ! entry ) return;
+	clearTimeout( entry.timer );
+	debounced.delete( key );
+	pending.delete( entry.id );
+	entry.waiters.forEach( settle => settle() );
 }
 
 // ── Public actions ──────────────────────────────────────────────
@@ -219,8 +279,7 @@ function debouncedUpdate( key, quantity ) {
 export async function fetchCart() {
 	emit( 'lean-cart:loading', { operation: 'fetch' } );
 	try {
-		const raw = await api.getCart();
-		commit( normalizeCart( raw ) );
+		await send( 0, () => api.getCart() );
 	} catch ( err ) {
 		emit( 'lean-cart:error', err );
 	}
@@ -233,25 +292,22 @@ export async function fetchCart() {
  * @param {object} options  - { trigger, openDrawer }.
  */
 export async function addItem( payload, { trigger = null, openDrawer = true } = {} ) {
-	takeSnapshot();
+	const id = ++lastId;
 	setLoading( trigger, true );
 
 	// Optimistic badge increment.
-	if ( state ) {
-		const optimistic = structuredClone( state );
-		optimistic.itemCount += payload.quantity || 1;
-		commit( optimistic );
-	}
+	pending.set( id, ( draft ) => {
+		draft.itemCount += payload.quantity || 1;
+	} );
+	publish();
 
 	try {
-		const raw = await api.addItem( payload );
-		commit( normalizeCart( raw ) );
+		const raw = await send( id, () => api.addItem( payload ) );
 		emit( 'lean-cart:item-added', { item: normalizeItem( raw.items?.[ raw.items.length - 1 ] ) } );
 		if ( openDrawer ) {
 			emit( 'lean-cart:open' );
 		}
 	} catch ( err ) {
-		rollback();
 		emit( 'lean-cart:error', err );
 	} finally {
 		setLoading( trigger, false );
@@ -266,8 +322,6 @@ export async function addItem( payload, { trigger = null, openDrawer = true } = 
 export async function changeQuantity( key, delta ) {
 	if ( ! state ) return;
 
-	takeSnapshot();
-
 	// Find the item and compute new quantity.
 	const item = state.items.find( i => i.key === key );
 	if ( ! item ) return;
@@ -275,21 +329,7 @@ export async function changeQuantity( key, delta ) {
 	const newQty = Math.max( item.quantityLimits.minimum || 1, item.quantity + delta );
 	if ( newQty === item.quantity ) return;
 
-	// Optimistic update.
-	const optimistic = structuredClone( state );
-	const optItem = optimistic.items.find( i => i.key === key );
-	optItem.quantity = newQty;
-	optItem.lineTotal = '...'; // Will be replaced by server response.
-	optimistic.itemCount = optimistic.items.reduce( ( s, i ) => s + i.quantity, 0 );
-	commit( optimistic );
-
-	try {
-		const raw = await debouncedUpdate( key, newQty );
-		commit( normalizeCart( raw ) );
-	} catch ( err ) {
-		rollback();
-		emit( 'lean-cart:error', err );
-	}
+	await debouncedUpdate( key, newQty );
 }
 
 /**
@@ -298,21 +338,24 @@ export async function changeQuantity( key, delta ) {
 export async function removeItem( key, { trigger = null } = {} ) {
 	if ( ! state ) return;
 
-	takeSnapshot();
+	// The line is going; a quantity change still waiting for it would only fail.
+	cancelDebounce( key );
+	const id = ++lastId;
 	setLoading( trigger, true );
 
 	// Optimistic removal.
-	const optimistic = structuredClone( state );
-	optimistic.items = optimistic.items.filter( i => i.key !== key );
-	optimistic.itemCount = optimistic.items.reduce( ( s, i ) => s + i.quantity, 0 );
-	commit( optimistic );
+	pending.set( id, ( draft ) => {
+		const item = draft.items.find( i => i.key === key );
+		if ( ! item ) return;
+		draft.items = draft.items.filter( i => i !== item );
+		draft.itemCount -= item.quantity + item.children.reduce( ( s, c ) => s + c.quantity, 0 );
+	} );
+	publish();
 
 	try {
-		const raw = await api.removeItem( { key } );
-		commit( normalizeCart( raw ) );
+		await send( id, () => api.removeItem( { key } ) );
 		emit( 'lean-cart:item-removed', { key } );
 	} catch ( err ) {
-		rollback();
 		emit( 'lean-cart:error', err );
 	} finally {
 		setLoading( trigger, false );
@@ -324,8 +367,7 @@ export async function removeItem( key, { trigger = null } = {} ) {
  */
 export async function applyCoupon( code ) {
 	try {
-		const raw = await api.applyCoupon( { code } );
-		commit( normalizeCart( raw ) );
+		await send( 0, () => api.applyCoupon( { code } ) );
 	} catch ( err ) {
 		emit( 'lean-cart:error', err );
 	}
@@ -336,8 +378,7 @@ export async function applyCoupon( code ) {
  */
 export async function removeCoupon( code ) {
 	try {
-		const raw = await api.removeCoupon( { code } );
-		commit( normalizeCart( raw ) );
+		await send( 0, () => api.removeCoupon( { code } ) );
 	} catch ( err ) {
 		emit( 'lean-cart:error', err );
 	}

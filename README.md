@@ -16,7 +16,7 @@ Lean Cart takes a different approach:
 - **Vanilla ES modules** — zero dependencies, no build step, no jQuery. Ships as native `type="module"` scripts with an import map for cache busting.
 - **Event-driven architecture** — the store emits `lean-cart:updated`, `lean-cart:open`, `lean-cart:error` events on `document`. Themes subscribe to render however they want.
 - **Cold-fetch guard** — skips the initial cart fetch entirely for visitors without a WooCommerce session cookie. First-time visitors pay zero cart overhead.
-- **Optimistic UI** — quantity changes, additions, and removals update the UI instantly and roll back on failure.
+- **Optimistic UI, serialised writes** — quantity changes, additions, and removals update the UI instantly. Every Store API call goes through one queue, so writes reach the server one at a time and in order (WooCommerce saves the cart session whole, so overlapping writes lose updates). The state is the server's latest answer with pending changes replayed on top, and a failed write rolls back to the server's real cart.
 - **Skeleton CSS with theme tokens** — ships a functional layout that maps to CSS custom properties. Themes override visuals; the plugin handles structure.
 
 ## Description
@@ -178,6 +178,14 @@ add_filter( 'kaupang/lean-cart/notice_cookie', fn() => 'my_notice' );
 ```
 
 Self-check: `wp eval-file wp-content/plugins/kaupang-lean-cart/tools/check-notices.php`
+
+### Write queue check
+
+```bash
+node tools/check-cart-queue.mjs   # Node 18+, no dependencies; exits non-zero on failure
+```
+
+It drives `cart-store.js` against a fake Store API with WooCommerce's lost-update session and controllable latency. It covers: overlapping writes, older responses, rollback after a failure, and superseded quantity promises.
 
 ## FAQ
 

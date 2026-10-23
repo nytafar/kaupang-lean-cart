@@ -4,6 +4,15 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+- Cart writes no longer lose updates. Every Store API call (add, quantity, remove, coupons, fetch) now goes through one queue, so WooCommerce's read-modify-write cart session sees one request at a time, in order. Before, two overlapping writes overwrote each other: on Wholesale's order table, `+` twice and then a variation left the line at 2, not 4 (crm plan D-121).
+- The state is the server's latest answer with still-pending optimistic changes replayed on top. An earlier write's response no longer overwrites a newer change.
+- A failed write restores the server's real cart (the cart in a 409 error, otherwise a fresh fetch), not a snapshot from before the op that also undid writes that succeeded meanwhile.
+- A `changeQuantity()` promise superseded by a newer change on the same line now settles with the write that carries it; it used to hang. Removing a line cancels its pending quantity write.
+
+### Added
+- `tools/check-cart-queue.mjs`: drives the store against a fake Store API with WooCommerce's lost-update session and controllable latency; exits non-zero on failure.
+
 ## [0.2.0] - 2026-09-29
 
 Renamed WooCommerce Lean Cart → **Kaupang Lean Cart** before first production deploy. Identity moved, the

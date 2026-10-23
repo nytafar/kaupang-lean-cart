@@ -150,6 +150,12 @@ Lean Cart is built so every page can be served from a shared page cache, cart or
 
 Self-check: `wp eval-file wp-content/plugins/kaupang-lean-cart/tools/check-notices.php`
 
+= Write queue check =
+
+    node tools/check-cart-queue.mjs   # Node 18+, no dependencies; exits non-zero on failure
+
+It drives `cart-store.js` against a fake Store API with WooCommerce's lost-update session and controllable latency. It covers: overlapping writes, older responses, rollback after a failure, and superseded quantity promises.
+
 == Frequently Asked Questions ==
 
 = Does this replace the WooCommerce cart page? =
