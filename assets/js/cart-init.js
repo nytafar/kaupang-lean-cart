@@ -172,16 +172,10 @@ if ( config.modules.subliumSubscriptions ) {
 }
 
 // WooCommerce's classic cart page and shortcode checkout run their own jQuery
-// cart requests; the bridge keeps them and the drawer in step. Not on block
-// cart/checkout, Lean Checkout, order-pay or order-received (no such form).
-const classicPage =
-	window.jQuery?.fn.block && (
-		( window.wc_checkout_params && document.querySelector( 'form.checkout' ) && 'checkout' ) ||
-		( window.wc_cart_params && document.querySelector( '.woocommerce-cart-form, .wc-empty-cart-message' ) && 'cart' )
-	);
-
-if ( classicPage ) {
-	import( './modules/classic-pages.js' ).then( m => m.init( store, window.jQuery, { page: classicPage, cartUrl: config.cartUrl } ) );
+// cart requests; the bridge keeps them and the drawer in step. Loaded where
+// cart.js or checkout.js runs; the module checks the page markup itself.
+if ( window.jQuery && ( window.wc_checkout_params || window.wc_cart_params ) ) {
+	import( './modules/classic-pages.js' ).then( m => m.init( store, window.jQuery, { cartUrl: config.cartUrl } ) );
 }
 
 // ── 6. Public API ───────────────────────────────────────────────
