@@ -13,9 +13,14 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 - Every Store API request times out after 20 s. A request that never answers no longer freezes the queue; the store re-fetches the real cart and moves on.
 - Queued calls run under the Web Lock `kaupang-lean-cart` where available, so two tabs of the same shop serialise their writes too.
 - `[data-lean-cart="checkout-url"]` links wait for queued writes (8 s at most) before navigating, so a burst of changes is not lost on the way to checkout.
+- Waiting for the Web Lock is limited to 25 s; after that, or when the lock is refused (e.g. SecurityError), the write runs without it. A tab suspended while holding the lock (iOS Safari) no longer freezes the other tabs' carts.
+- `fetchCart()` no longer takes the Web Lock (it stays in the tab's queue): a held lock disables the back/forward cache on older Chromium (Samsung Internet).
+- A write cut off by the 20 s timeout may still finish on the server: the store now waits 10 s, holding its turn, before re-reading the cart. The shopper sees the write if it landed, and nothing queued overlaps the still-running request.
+- A pending `+`/`−` on a line that disappeared (another tab, re-keyed) now raises the update error and shows the real cart; it used to snap back silently.
+- The checkout link's `aria-busy` is cleared before navigating and on `pageshow`, so Back from checkout no longer leaves it marked busy.
 
 ### Added
-- `store.whenIdle()` (resolves once queued writes and debounced changes have landed) and `store.enqueue( fn )` (run your own Store API call in the cart's queue). Additive; the rest of the contract is unchanged.
+- `store.whenIdle()` (resolves once queued writes and debounced changes have landed) and `store.enqueue( fn, { timeout } )` (run your own Store API call in the cart's queue; `timeout: Infinity` holds the turn until it settles, for an order submit). Additive; the rest of the contract is unchanged.
 - `tools/check-cart-queue.mjs`: drives the store against a fake Store API with WooCommerce's lost-update session, and sets latency, failures, hangs and network errors per request; exits non-zero on failure. Run it with `/root/.nvm/versions/node/v22.21.0/bin/node tools/check-cart-queue.mjs` on the server (any Node 18+). An exception to the suite's PHP-native check rule (conventions §10): the store is browser JavaScript and cannot be driven from PHP.
 
 ## [0.2.0] - 2026-09-29

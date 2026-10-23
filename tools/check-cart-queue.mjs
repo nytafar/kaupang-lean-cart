@@ -28,6 +28,17 @@ window.leanCartConfig = {
 	i18n: {},
 };
 const realTimeout = AbortSignal.timeout.bind( AbortSignal );
+// Production time limits (20 s request, 10 s settle, 25 s lock wait) at 1/50 speed.
+async function scaledTime( fn ) {
+	AbortSignal.timeout = ( ms ) => realTimeout( ms / 50 );
+	try {
+		return await fn();
+	} finally {
+		AbortSignal.timeout = realTimeout;
+	}
+}
+// A fake navigator.locks: request( name, [options,] job ) runs `grant( job, options )`.
+const fakeLocks = ( grant ) => ( { requests: 0, request( name, a, b ) { this.requests++; return grant( b || a, b ? a : {} ); } } );
 const setLocks = ( locks ) => Object.defineProperty( globalThis, 'navigator', { value: { locks }, configurable: true, writable: true } );
 setLocks( undefined );
 
@@ -62,35 +73,43 @@ function fakeServer( items, { latency = () => 50, fail = () => null, hang = () =
 		srv.maxInFlight = Math.max( srv.maxInFlight, ++srv.inFlight );
 		const cart = structuredClone( srv.cart ); // session read at request start
 		const coupons = [ ...srv.coupons ];
-		try {
-			if ( hang( route, data, srv ) ) {
-				await new Promise( ( _, reject ) => signal?.addEventListener( 'abort', () => reject( signal.reason ) ) );
+		const aborted = new Promise( ( _, reject ) => signal?.addEventListener( 'abort', () => reject( signal.reason ), { once: true } ) );
+		aborted.catch( () => {} );
+		if ( hang( route, data, srv ) ) {
+			try {
+				await aborted;
+			} finally {
+				srv.inFlight--;
+				entry.end = Date.now();
 			}
+		}
+		// The server finishes its work even when the client has given up (PHP keeps running).
+		const work = ( async () => {
 			await sleep( latency( route, data, srv ) );
-		} finally {
 			srv.inFlight--;
 			entry.end = Date.now();
-		}
-		const failure = fail( route, data, srv );
-		if ( failure ) return reply( failure, { code: 'fail', message: 'fail', data: failure === 409 ? { cart: raw( srv.cart, srv.coupons ) } : {} } );
-		if ( route === 'cart/add-item' ) {
-			const key = 'k' + data.id + ( data.variation?.length ? 'v' + data.variation[ 0 ].value : '' );
-			const line = cart.find( i => i.key === key );
-			line ? ( line.quantity += data.quantity ) : cart.push( { key, id: data.id, quantity: data.quantity } );
-		} else if ( route === 'cart/update-item' ) {
-			const line = cart.find( i => i.key === data.key );
-			if ( ! line ) return reply( 409, { code: 'woocommerce_rest_cart_invalid_key', message: 'gone', data: { cart: raw( srv.cart, srv.coupons ) } } );
-			line.quantity = data.quantity;
-		} else if ( route === 'cart/remove-item' ) {
-			cart.splice( cart.findIndex( i => i.key === data.key ), 1 );
-		} else if ( route === 'cart/apply-coupon' ) {
-			coupons.push( data.code );
-		}
-		if ( method !== 'GET' ) { // session saved at request end
-			srv.cart = cart;
-			srv.coupons = coupons;
-		}
-		return reply( 200, raw( cart, coupons ) );
+			const failure = fail( route, data, srv );
+			if ( failure ) return reply( failure, { code: 'fail', message: 'fail', data: failure === 409 ? { cart: raw( srv.cart, srv.coupons ) } : {} } );
+			if ( route === 'cart/add-item' ) {
+				const key = 'k' + data.id + ( data.variation?.length ? 'v' + data.variation[ 0 ].value : '' );
+				const line = cart.find( i => i.key === key );
+				line ? ( line.quantity += data.quantity ) : cart.push( { key, id: data.id, quantity: data.quantity } );
+			} else if ( route === 'cart/update-item' ) {
+				const line = cart.find( i => i.key === data.key );
+				if ( ! line ) return reply( 409, { code: 'woocommerce_rest_cart_invalid_key', message: 'gone', data: { cart: raw( srv.cart, srv.coupons ) } } );
+				line.quantity = data.quantity;
+			} else if ( route === 'cart/remove-item' ) {
+				cart.splice( cart.findIndex( i => i.key === data.key ), 1 );
+			} else if ( route === 'cart/apply-coupon' ) {
+				coupons.push( data.code );
+			}
+			if ( method !== 'GET' ) { // session saved at request end
+				srv.cart = cart;
+				srv.coupons = coupons;
+			}
+			return reply( 200, raw( cart, coupons ) );
+		} )();
+		return Promise.race( [ work, aborted ] );
 	};
 	return srv;
 }
@@ -324,15 +343,16 @@ await scenario( 'event contract: order, and one error per failed write', async (
 
 await scenario( 'two tabs share one cart session: the Web Lock serialises them', async () => {
 	let tail = Promise.resolve();
-	setLocks( { request: ( name, job ) => { const turn = tail.then( () => job( { name } ) ); tail = turn.catch( () => {} ); return turn; } } );
+	setLocks( fakeLocks( ( job ) => { const turn = tail.then( () => job( {} ) ); tail = turn.catch( () => {} ); return turn; } ) );
 	try {
 		const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 }, { key: 'b', id: 2, quantity: 1 } ], { latency: () => 200 } );
 		const tab1 = ( await freshStore() ).store;
 		const tab2 = ( await freshStore( { sameBus: true } ) ).store;
-		await Promise.all( [ tab1.fetchCart(), tab2.fetchCart() ] );
+		await tab1.fetchCart(); // reads skip the lock (fetchCart is not a write)
+		await tab2.fetchCart();
 		const all = Promise.all( [ tab1.changeQuantity( 'a', 1 ), tab2.addItem( { id: 3, quantity: 1 }, { openDrawer: false } ), tab2.changeQuantity( 'b', 2 ) ] );
 		ok( await settles( all ), 'every promise settles' );
-		ok( srv.maxInFlight === 1, `server never sees two requests at once across tabs (max ${ srv.maxInFlight })` );
+		ok( srv.maxInFlight === 1, `server never sees two writes at once across tabs (max ${ srv.maxInFlight })` );
 		ok( lines( srv.cart ) === 'a=2,b=3,k3=1', `server cart is a=2,b=3,k3=1 (got ${ lines( srv.cart ) })` );
 	} finally {
 		setLocks( undefined );
@@ -353,6 +373,91 @@ await scenario( 'whenIdle and enqueue', async () => {
 	const failing = store.enqueue( async () => { throw new Error( 'boom' ); } );
 	ok( await failing.then( () => false, e => e.message === 'boom' ), 'enqueue rejects with the call\'s error' );
 } );
+
+await scenario( 'a lock that is never granted: the turn runs without it after the wait limit', () => scaledTime( async () => {
+	// A lock held by a suspended tab: never granted, honours the abort signal.
+	setLocks( fakeLocks( ( job, { signal } ) => new Promise( ( _, reject ) => signal?.addEventListener( 'abort', () => reject( signal.reason ) ) ) ) );
+	try {
+		const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ] );
+		const { store } = await freshStore();
+		ok( await settles( store.fetchCart(), 2000 ), 'fetchCart settles (reads take no lock)' );
+		ok( await settles( store.changeQuantity( 'a', 1 ), 3000 ), 'the change settles' );
+		ok( lines( srv.cart ) === 'a=2', `server cart is a=2 (got ${ lines( srv.cart ) })` );
+	} finally {
+		setLocks( undefined );
+	}
+} ) );
+
+await scenario( 'a refused lock (SecurityError): the turn runs without it', async () => {
+	setLocks( fakeLocks( () => Promise.reject( new DOMException( 'denied', 'SecurityError' ) ) ) );
+	try {
+		const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ] );
+		const { store } = await freshStore();
+		await store.fetchCart();
+		ok( await settles( store.addItem( { id: 2, quantity: 1 }, { openDrawer: false } ) ), 'the add settles' );
+		ok( lines( srv.cart ) === 'a=1,k2=1', `server cart is a=1,k2=1 (got ${ lines( srv.cart ) })` );
+	} finally {
+		setLocks( undefined );
+	}
+} );
+
+await scenario( 'fetchCart takes no lock; writes do', async () => {
+	const locks = fakeLocks( ( job ) => job( {} ) );
+	setLocks( locks );
+	try {
+		fakeServer( [ { key: 'a', id: 1, quantity: 1 } ] );
+		const { store } = await freshStore();
+		await store.fetchCart();
+		ok( locks.requests === 0, `fetchCart requested no lock (got ${ locks.requests })` );
+		await store.addItem( { id: 2, quantity: 1 }, { openDrawer: false } );
+		ok( locks.requests === 1, `the add requested the lock (got ${ locks.requests })` );
+	} finally {
+		setLocks( undefined );
+	}
+} );
+
+await scenario( 'a write cut off by the timeout but finished by the server is seen, and nothing overlaps it', () => scaledTime( async () => {
+	// Timeout 400 ms; the server needs 500 ms for the update and still saves it.
+	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: ( r ) => r === 'cart/update-item' ? 500 : 30 } );
+	const { store, errors } = await freshStore();
+	await store.fetchCart();
+	const p1 = store.changeQuantity( 'a', 1 );
+	await sleep( 450 ); // the update is on the wire
+	const p2 = store.addItem( { id: 2, quantity: 1 }, { openDrawer: false } );
+	ok( await settles( Promise.all( [ p1, p2 ] ), 4000 ), 'both promises settle' );
+	ok( errors.length === 1 && errors[ 0 ].code === 'request_timeout', `one request_timeout error (got ${ errors.map( e => e.code ) })` );
+	ok( srv.maxInFlight === 1, `nothing overlapped the still-running write (max ${ srv.maxInFlight })` );
+	ok( lines( srv.cart ) === 'a=2,k2=1', `server cart is a=2,k2=1 (got ${ lines( srv.cart ) })` );
+	ok( lines( store.getState().items ) === 'a=2,k2=1', `state shows the write that landed (got ${ lines( store.getState().items ) })` );
+} ) );
+
+await scenario( 'a pending +/- on a line that is gone: an error, and the real cart', async () => {
+	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 }, { key: 'b', id: 2, quantity: 1 } ] );
+	const { store, errors } = await freshStore();
+	await store.fetchCart();
+	const p = store.changeQuantity( 'a', 1 );
+	srv.cart = [ { key: 'b', id: 2, quantity: 1 } ]; // another tab removed the line
+	const p2 = store.addItem( { id: 3, quantity: 1 }, { openDrawer: false } ); // its answer shows the line gone
+	ok( await settles( Promise.all( [ p, p2 ] ) ), 'promises settle' );
+	ok( errors.length === 1, `one error event (got ${ errors.length })` );
+	ok( lines( store.getState().items ) === 'b=1,k3=1', `state is the server cart b=1,k3=1 (got ${ lines( store.getState().items ) })` );
+} );
+
+await scenario( 'enqueue: the default limit releases the turn; timeout Infinity holds it', () => scaledTime( async () => {
+	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: () => 30 } );
+	const { store } = await freshStore();
+	if ( typeof store.enqueue !== 'function' ) return ok( false, 'store exports enqueue' );
+	await store.fetchCart();
+	let end = 0;
+	store.enqueue( () => sleep( 800 ).then( () => { end = Date.now(); } ), { timeout: Infinity } );
+	await settles( store.addItem( { id: 2, quantity: 1 }, { openDrawer: false } ) );
+	const add = srv.log.find( e => e.route === 'cart/add-item' );
+	ok( end && add.start >= end, 'with timeout Infinity the add waited for the call (an order submit)' );
+	const t0 = Date.now();
+	store.enqueue( () => new Promise( () => {} ) ); // never settles
+	ok( await settles( store.addItem( { id: 3, quantity: 1 }, { openDrawer: false } ), 2000 ), 'with the default limit a never-settling call releases the turn' );
+	ok( Date.now() - t0 < 1500, `released at the (scaled) 20 s limit (${ Date.now() - t0 } ms)` );
+} ) );
 
 console.log( failed ? `\n${ failed } check(s) failed` : '\nall checks passed' );
 process.exit( failed ? 1 : 0 );

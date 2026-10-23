@@ -12,13 +12,21 @@ let nonce = window.leanCartConfig.nonce;
 // the store re-fetches the real cart and moves on.
 export const REQUEST_TIMEOUT_MS = 20000;
 
-function timeoutSignal() {
+/**
+ * A signal that aborts after `ms`. Every time limit in the cart's network path
+ * goes through here (tools/check-cart-queue.mjs scales them down).
+ */
+export function timeoutSignal( ms = REQUEST_TIMEOUT_MS ) {
 	if ( AbortSignal.timeout ) {
-		return AbortSignal.timeout( REQUEST_TIMEOUT_MS );
+		return AbortSignal.timeout( ms );
 	}
 	const controller = new AbortController();
-	setTimeout( () => controller.abort(), REQUEST_TIMEOUT_MS );
+	setTimeout( () => controller.abort( new DOMException( 'Timed out', 'TimeoutError' ) ), ms );
 	return controller.signal;
+}
+
+export function wait( ms ) {
+	return new Promise( r => timeoutSignal( ms ).addEventListener( 'abort', r, { once: true } ) );
 }
 
 /**

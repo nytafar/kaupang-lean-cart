@@ -174,6 +174,8 @@ const pending = new Map(); // op id → fn( draft ) applying that op optimistica
 let lastId = 0;
 let queue = Promise.resolve();
 const LOCK = 'kaupang-lean-cart'; // Web Lock: tabs of the same shop share one cart session
+const LOCK_WAIT_MS = 25000;       // a tab suspended while holding the lock must not freeze this one
+const WRITE_SETTLE_MS = 10000;    // a timed-out write may still finish in PHP; let it before re-reading
 
 const sleep = ( ms ) => new Promise( r => setTimeout( r, ms ) );
 
@@ -200,11 +202,30 @@ function publish() {
 }
 
 /**
- * Give `job` the next turn: after every earlier turn in this tab, and under the
- * cross-tab lock where the browser has one.
+ * Run `job` under the cross-tab lock. If the lock is not granted within
+ * LOCK_WAIT_MS, or the request is refused (no Web Locks, SecurityError), run it
+ * without the lock rather than freeze the cart.
  */
-function takeTurn( job ) {
-	const turn = queue.then( () => navigator.locks?.request ? navigator.locks.request( LOCK, job ) : job() );
+function withLock( job ) {
+	if ( ! navigator.locks?.request ) return job();
+	let ran = false;
+	return navigator.locks.request( LOCK, { signal: api.timeoutSignal( LOCK_WAIT_MS ) }, () => {
+		ran = true;
+		return job();
+	} ).catch( ( err ) => {
+		if ( ran ) throw err; // the job's own failure
+		return job();
+	} );
+}
+
+/**
+ * Give `job` the next turn: after every earlier turn in this tab and, unless
+ * `lock` is false, under the cross-tab lock. Reads skip the lock: they cannot
+ * lose a write, and a held Web Lock disables the back/forward cache on older
+ * Chromium.
+ */
+function takeTurn( job, { lock = true } = {} ) {
+	const turn = queue.then( () => lock ? withLock( job ) : job() );
 	queue = turn.catch( () => {} );
 	return turn;
 }
@@ -212,17 +233,20 @@ function takeTurn( job ) {
 /**
  * Run a Store API call made outside the store (e.g. by a checkout) in the same
  * queue, so it never overlaps a cart write. Resolves or rejects with the call's
- * own result. A call that never settles gives up its turn after the request
- * timeout, so it cannot hold the queue.
+ * own result. A call that never settles gives up its turn after `timeout` ms,
+ * so it cannot hold the queue. Pass `timeout: Infinity` to hold the turn until
+ * the call settles (an order submit); the call must then time out by itself.
  *
- * @param {function} call - Returns a promise (the request).
+ * @param {function} call    - Returns a promise (the request).
+ * @param {object}   options - { timeout } in ms, default 20000.
  */
-export function enqueue( call ) {
+export function enqueue( call, { timeout = api.REQUEST_TIMEOUT_MS } = {} ) {
 	return new Promise( ( resolve, reject ) => {
 		takeTurn( () => {
 			const result = Promise.resolve().then( call );
 			result.then( resolve, reject );
-			return Promise.race( [ result.catch( () => {} ), sleep( api.REQUEST_TIMEOUT_MS ) ] );
+			const settled = result.catch( () => {} );
+			return Number.isFinite( timeout ) ? Promise.race( [ settled, api.wait( timeout ) ] ) : settled;
 		} );
 	} );
 }
@@ -245,10 +269,11 @@ export async function whenIdle() {
  * Run one store call in the queue. Its answer becomes the confirmed cart (a
  * call may answer null: nothing to send). On failure the confirmed cart is the
  * server's real one: from the error (WooCommerce attaches it on 409) or a
- * fresh fetch, never a snapshot. Every request here times out (cart-api.js),
- * so a turn always ends.
+ * fresh fetch, never a snapshot. A write that timed out may still finish in
+ * PHP, so the re-read waits WRITE_SETTLE_MS first (held turn, no overlap).
+ * Every request here times out (cart-api.js), so a turn always ends.
  */
-function send( id, call ) {
+function send( id, call, { read = false } = {} ) {
 	return takeTurn( async () => {
 		try {
 			const raw = await call();
@@ -257,6 +282,9 @@ function send( id, call ) {
 			}
 			return raw;
 		} catch ( err ) {
+			if ( ! read && err?.code === 'request_timeout' ) {
+				await api.wait( WRITE_SETTLE_MS );
+			}
 			const cart = err?.data?.cart || await api.getCart().catch( () => null );
 			if ( cart ) {
 				confirmed = normalizeCart( cart );
@@ -266,7 +294,7 @@ function send( id, call ) {
 			pending.delete( id );
 			publish();
 		}
-	} );
+	}, { lock: ! read } );
 }
 
 // ── Debounce map (per item key) ─────────────────────────────────
@@ -312,7 +340,10 @@ function debouncedUpdate( key, delta ) {
 		entry.timer = setTimeout( () => {
 			send( entry.id, () => {
 				const item = confirmed?.items.find( i => i.key === key );
-				if ( ! item ) return null; // the line is gone
+				if ( ! item ) {
+					// The line is gone or re-keyed: say so, and the failure path re-reads the cart.
+					throw { code: 'kaupang_lean_cart_line_gone', message: '', data: null };
+				}
 				const quantity = clampQuantity( item, item.quantity + entry.delta );
 				return quantity === item.quantity ? null : api.updateItem( { key, quantity } );
 			} )
@@ -340,7 +371,7 @@ function cancelDebounce( key ) {
 export async function fetchCart() {
 	emit( 'lean-cart:loading', { operation: 'fetch' } );
 	try {
-		await send( 0, () => api.getCart() );
+		await send( 0, () => api.getCart(), { read: true } );
 	} catch ( err ) {
 		emit( 'lean-cart:error', err );
 	}

@@ -131,8 +131,14 @@ document.addEventListener( 'click', ( e ) => {
 	e.preventDefault();
 	link.setAttribute( 'aria-busy', 'true' );
 	Promise.race( [ store.whenIdle(), new Promise( r => setTimeout( r, 8000 ) ) ] ).then( () => {
+		link.removeAttribute( 'aria-busy' );
 		window.location.href = link.href;
 	} );
+} );
+
+// Back from checkout restores this page from the back/forward cache as it was left.
+window.addEventListener( 'pageshow', () => {
+	document.querySelectorAll( '[data-lean-cart="checkout-url"][aria-busy]' ).forEach( el => el.removeAttribute( 'aria-busy' ) );
 } );
 
 // ── 4. Bridge to theme navigation ──────────────────────────────

@@ -77,9 +77,9 @@ The plugin emits a `lean-cart:open` event when an item is added. If your theme e
     window.leanCart.close()   // Dispatch lean-cart:close event
 
     window.leanCart.store.whenIdle()     // Resolves once queued writes and debounced changes have landed
-    window.leanCart.store.enqueue( fn )  // Run your own Store API call (fn returns its promise) in the cart's queue
+    window.leanCart.store.enqueue( fn, { timeout } )  // Run your own Store API call (fn returns its promise) in the cart's queue
 
-**One write queue.** WooCommerce saves the cart session whole per request, so overlapping Store API writes lose updates. Every store call goes through one queue, and under the Web Lock `kaupang-lean-cart` where the browser has it (tabs of a shop share one session). Each request times out after 20 s, so the queue always moves on. Code that writes to the Store API itself should pass the call through `store.enqueue()` and then `refresh()`. Before leaving the page with pending changes (e.g. to checkout), await `store.whenIdle()` with a deadline. Lean Cart's own `[data-lean-cart="checkout-url"]` links already do.
+**One write queue.** WooCommerce saves the cart session whole per request, so overlapping Store API writes lose updates. Every store call goes through one queue. Writes also run under the Web Lock `kaupang-lean-cart` where the browser has it (tabs of a shop share one session); after 25 s without the lock, or if it is refused, they run without it. Reads (`fetchCart`) skip the lock. Each request times out after 20 s, so the queue always moves on. A write that timed out may still finish in PHP, so the store waits 10 s before re-reading the cart. Code that writes to the Store API itself should pass the call through `store.enqueue()` and then `refresh()`. An enqueued call gives up its turn after `timeout` ms (default 20000); `timeout: Infinity` holds it until the call settles (an order submit), so the call must time out by itself. Before leaving the page with pending changes (e.g. to checkout), await `store.whenIdle()` with a deadline. Lean Cart's own `[data-lean-cart="checkout-url"]` links already do.
 
 == Installation ==
 
