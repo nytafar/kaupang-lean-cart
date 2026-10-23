@@ -79,7 +79,11 @@ const hasSession =
 	document.cookie.includes( 'wp_woocommerce_session' ) ||
 	document.cookie.includes( 'woocommerce_items_in_cart' );
 
-if ( hasSession ) {
+// On WooCommerce's shortcode checkout the bridge (section 5) reads the cart
+// after checkout.js's page-load update_order_review instead of ahead of it.
+const classicCheckout = !! ( window.jQuery && window.wc_checkout_params && document.querySelector( 'form.checkout' ) );
+
+if ( hasSession && ! classicCheckout ) {
 	store.fetchCart();
 }
 
@@ -175,7 +179,10 @@ if ( config.modules.subliumSubscriptions ) {
 // cart requests; the bridge keeps them and the drawer in step. Loaded where
 // cart.js or checkout.js runs; the module checks the page markup itself.
 if ( window.jQuery && ( window.wc_checkout_params || window.wc_cart_params ) ) {
-	import( './modules/classic-pages.js' ).then( m => m.init( store, window.jQuery, { cartUrl: config.cartUrl } ) );
+	const read = hasSession && classicCheckout;
+	import( './modules/classic-pages.js' )
+		.then( m => m.init( store, window.jQuery, { cartUrl: config.cartUrl, read } ) )
+		.catch( () => read && store.fetchCart() );
 }
 
 // ── 6. Public API ───────────────────────────────────────────────

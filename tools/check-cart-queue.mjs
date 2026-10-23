@@ -462,13 +462,16 @@ await scenario( 'enqueue: the default limit releases the turn; timeout Infinity 
 // ── Classic pages bridge (modules/classic-pages.js) ─────────────────────────
 //
 // A fake jQuery that follows jquery.js 3.7.1's $.ajax where the bridge depends on it: options merged
-// without undefined values, prefilters, $.active and the global events, beforeSend, the XHR transport
-// sending through `settings.xhr()` and detaching its handlers on abort, abort → done( 0 ), readyState
-// 0/1/4, status and headers. Its XMLHttpRequest works on the same fake session: a classic request reads
+// without undefined values, prefilters, $.active and the global events, beforeSend, the timeout option
+// (started before the transport sends), the XHR transport sending through `settings.xhr()` (by default
+// `new window.XMLHttpRequest()`) and detaching its handlers before it aborts the XHR, abort → done( 0 ),
+// readyState 0/1/4, status and headers, and $( fn ) after DOM ready. Its XMLHttpRequest works on the
+// same fake session: a classic request reads
 // the cart when it starts and saves its copy when it ends (update_order_review's calculate_totals →
 // set_session), and the server finishes even when the browser has aborted. The cart form post applies
 // its quantities only with an update_cart field, as WC_Form_Handler::update_cart_action does; a
-// successful order empties the cart. Stand-ins for checkout.js and cart.js do what those do.
+// successful order empties the cart. Stand-ins for checkout.js and cart.js do what those do, including
+// checkout.js's update at DOM ready (initCheckout) and cart.js swapping in a fresh, unblocked form.
 
 function fakeDeferred() {
 	let state = 'pending';
@@ -528,8 +531,9 @@ const SUBMIT = 'https://shop.test/?wc-ajax=checkout';
 const NONCE = 'woocommerce-cart-nonce=n';
 
 // page: 'checkout' | 'cart' | 'empty-cart' | other. Options per request (route, entry): latency → ms,
-// fail → true (submit: result failure; others: HTTP 500), hang → never answers.
-function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang = () => false } = {} ) {
+// fail → true (submit: result failure; others: HTTP 500), hang → never answers. Page: drawer → the page
+// has Lean Cart markup; initCheckout → checkout.js sends its update at DOM ready (jq.ready()).
+function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang = () => false, drawer = true, initCheckout = false } = {} ) {
 	const handlers = {};
 	const triggers = [];  // events triggered on document.body
 	const globals = [];   // jQuery's global ajax events: { name, jq, data, t }
@@ -537,11 +541,16 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 	const prefilters = [];
 	const fire = ( name, args = [] ) => ( handlers[ name ] || [] ).slice().forEach( fn => fn( { type: name }, ...args ) );
 	const checkoutForm = page === 'checkout' ? fakeElement() : null;
-	const cartForm = page === 'cart' ? fakeElement( { qty: {}, hidden: false } ) : null;
-	const dom = { 'form.checkout': checkoutForm, '.woocommerce-cart-form': cartForm, '.wc-empty-cart-message': page === 'empty-cart' ? {} : null };
+	const dom = { 'form.checkout': checkoutForm, '.woocommerce-cart-form': page === 'cart' ? fakeElement( { qty: {}, hidden: false } ) : null,
+		'.wc-empty-cart-message': page === 'empty-cart' ? {} : null, '[data-lean-cart]': drawer ? {} : null };
+	let readyList = [];
 
 	const $ = ( sel ) => {
-		const el = typeof sel === 'string' && sel.startsWith( '.woocommerce-cart-form' ) ? cartForm : null;
+		if ( typeof sel === 'function' ) {
+			readyList ? readyList.push( sel ) : setTimeout( sel );
+			return;
+		}
+		const el = typeof sel === 'string' && sel.startsWith( '.woocommerce-cart-form' ) ? dom[ '.woocommerce-cart-form' ] : null;
 		const wrap = {
 			length: el ? 1 : 0,
 			trigger( name ) { triggers.push( name ); fire( name ); return wrap; },
@@ -554,6 +563,11 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 		return wrap;
 	};
 	$.fn = { block() {} };
+	// DOM ready: the handlers run in the order they were added, one task each.
+	const ready = () => {
+		readyList?.forEach( fn => setTimeout( fn ) );
+		readyList = null;
+	};
 	$.Deferred = fakeDeferred;
 	$.active = 0;
 	$.ajaxPrefilter = ( fn ) => prefilters.push( fn );
@@ -606,6 +620,8 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 		}
 	}
 
+	globalThis.XMLHttpRequest = FakeXHR;
+
 	// jQuery's XHR transport (jquery.js 9822-9900).
 	function xhrTransport( s ) {
 		let callback;
@@ -615,7 +631,7 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 				xhr.open( s.type, s.url );
 				callback = ( type ) => () => {
 					if ( ! callback ) return;
-					callback = xhr.onload = xhr.onerror = xhr.onabort = null;
+					callback = xhr.onload = xhr.onerror = xhr.onabort = null; // then the XHR's own abort (the prototype's)
 					if ( type === 'abort' ) xhr.abort();
 					else if ( type === 'error' ) complete( xhr.status, xhr.statusText );
 					else complete( xhr.status, xhr.statusText, { text: xhr.responseText }, xhr.getAllResponseHeaders() );
@@ -632,7 +648,7 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 	// jQuery.ajax (jquery.js 9180-9660), the parts the bridge meets.
 	$.ajax = function ( url, options ) {
 		const given = url && typeof url === 'object' ? url : { ...options, url };
-		const s = { type: 'GET', async: true, global: true, xhr: () => new FakeXHR(), ...Object.fromEntries( Object.entries( given ).filter( ( [ , v ] ) => v !== undefined ) ) };
+		const s = { type: 'GET', async: true, global: true, timeout: 0, xhr: () => new window.XMLHttpRequest(), ...Object.fromEntries( Object.entries( given ).filter( ( [ , v ] ) => v !== undefined ) ) };
 		s.url = String( s.url || location.href );
 		if ( s.data && typeof s.data !== 'string' ) s.data = new URLSearchParams( s.data ).toString();
 		const ctx = s.context || s;
@@ -640,6 +656,7 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 		const completes = [];
 		let completed = null;
 		let transport;
+		let timeoutTimer;
 		let strAbort = 'canceled';
 		let headers = '';
 		const jq = dfd.promise( {
@@ -669,6 +686,7 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 		jq.readyState = 1;
 		globalEvent( 'ajaxSend' );
 		if ( completed ) return jq;
+		if ( s.async && s.timeout > 0 ) timeoutTimer = setTimeout( () => jq.abort( 'timeout' ), s.timeout );
 		completed = false;
 		transport.send( done );
 		return jq;
@@ -676,6 +694,7 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 		function done( status, nativeStatusText, responses, rawHeaders ) {
 			if ( completed ) return;
 			completed = true;
+			clearTimeout( timeoutTimer );
 			transport = undefined;
 			headers = rawHeaders || '';
 			jq.readyState = status > 0 ? 4 : 0;
@@ -712,6 +731,7 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 	// checkout.js: update_checkout → update_checkout_action 5 ms later, which aborts the previous
 	// update_order_review and keeps the new one in wc_checkout_form.xhr; submit; submit_error.
 	const checkout = { xhr: null, placed: false };
+	if ( checkoutForm && initCheckout ) $( () => $( document.body ).trigger( 'update_checkout' ) );
 	if ( checkoutForm ) {
 		$( document.body ).on( 'update_checkout', () => setTimeout( () => {
 			checkout.xhr?.abort();
@@ -733,33 +753,35 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 
 	// cart.js: update_cart posts the form as rendered (no form on the empty-cart page: url and
 	// method undefined, and update_wc_div reloads the page); "Update cart" adds the hidden
-	// update_cart field first and is ignored while the form is blocked; update_wc_div replaces the form.
-	const cart = { reloads: 0 };
+	// update_cart field first and is ignored while the form is blocked; update_wc_div swaps in the
+	// answer's form, unblocked, and complete unblocks the form the request started from.
+	// cart.form is the form on the page now.
+	const cart = { reloads: 0, get form() { return dom[ '.woocommerce-cart-form' ]; } };
 	if ( page === 'cart' || page === 'empty-cart' ) {
-		const serialize = () => [ ...Object.entries( cartForm.qty ).map( ( [ k, q ] ) => `cart[${ k }][qty]=${ q }` ), NONCE, ...( cartForm.hidden ? [ 'update_cart=Update+Cart' ] : [] ) ].join( '&' );
+		const serialize = ( form ) => [ ...Object.entries( form.qty ).map( ( [ k, q ] ) => `cart[${ k }][qty]=${ q }` ), NONCE, ...( form.hidden ? [ 'update_cart=Update+Cart' ] : [] ) ].join( '&' );
 		const updateWcDiv = ( html ) => {
-			if ( ! cartForm ) {
+			if ( ! cart.form ) {
 				cart.reloads++;
 				return;
 			}
-			cartForm.qty = Object.fromEntries( JSON.parse( html ).items.map( i => [ i.key, i.quantity ] ) );
-			cartForm.hidden = false;
+			dom[ '.woocommerce-cart-form' ] = fakeElement( { qty: Object.fromEntries( JSON.parse( html ).items.map( i => [ i.key, i.quantity ] ) ), hidden: false } );
 		};
 		cart.post = () => {
-			cartForm?.classList.add( 'processing' );
-			$.ajax( { type: cartForm ? 'post' : undefined, url: cartForm ? CART_URL : undefined, data: cartForm ? serialize() : '', dataType: 'html',
-				success: updateWcDiv, complete: () => cartForm?.classList.remove( 'processing' ) } );
+			const form = cart.form;
+			form?.classList.add( 'processing' );
+			$.ajax( { type: form ? 'post' : undefined, url: form ? CART_URL : undefined, data: form ? serialize( form ) : '', dataType: 'html',
+				success: updateWcDiv, complete: () => form?.classList.remove( 'processing' ) } );
 		};
 		$( document.body ).on( 'wc_update_cart', cart.post );
 		cart.updateCart = () => {
-			if ( cartForm.classList.contains( 'processing' ) ) return false;
-			cartForm.hidden = true;
+			if ( cart.form.classList.contains( 'processing' ) ) return false;
+			cart.form.hidden = true;
 			cart.post();
 			return true;
 		};
 	}
 
-	return { $, triggers, globals, removed, dom, checkout, checkoutForm, cart, cartForm };
+	return { $, ready, triggers, globals, removed, dom, checkout, checkoutForm, cart };
 }
 
 // The page's globals and markup, as classicPage() reads them.
@@ -772,14 +794,16 @@ function setPage( { jQuery, checkout = false, cart = false, dom = {} } ) {
 globalThis.location = { href: 'https://shop.test/kassen/' };
 const bridgeUrl = () => pathToFileURL( path.join( jsDir, 'modules/classic-pages.js' ) ).href + '?run=' + run;
 
-// A fresh store with the bridge on `page`. `before( ctx, jq )` runs before the bridge loads.
-async function freshBridge( page, srv, jqOptions, { before } = {} ) {
+// A fresh store with the bridge on `page`. `before( ctx, jq )` runs before the bridge loads; DOM ready
+// comes after it, unless `before` made it come first (jq.ready()). `read`: init's option.
+async function freshBridge( page, srv, jqOptions, { before, read } = {} ) {
 	const ctx = await freshStore();
 	const jq = fakeJQuery( srv, page, jqOptions );
 	globalThis.location = { href: page === 'checkout' ? 'https://shop.test/kassen/' : CART_URL };
 	setPage( { jQuery: jq.$, checkout: page === 'checkout', cart: page !== 'checkout', dom: jq.dom } );
 	await before?.( ctx, jq );
-	( await import( bridgeUrl() ) ).init( ctx.store, jq.$, { cartUrl: CART_URL } );
+	( await import( bridgeUrl() ) ).init( ctx.store, jq.$, { cartUrl: CART_URL, read } );
+	jq.ready();
 	return { ...ctx, ...jq };
 }
 const during = ( srv, a ) => srv.log.filter( e => e !== a && e.start < ( a.end ?? Infinity ) && ( e.end ?? Infinity ) > a.start );
@@ -894,23 +918,23 @@ await scenario( 'bridge: callers keep jQuery\'s own jqXHR; Vipps\' readyState ch
 await scenario( 'bridge, cart page: Update cart → the drawer re-reads; a drawer change refreshes the form without posting stale quantities (bug 3)', async () => {
 	let failNext = false;
 	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: () => 60 } );
-	const { store, cart, cartForm, triggers } = await freshBridge( 'cart', srv, { latency: () => 120, fail: () => {
+	const { store, cart, triggers } = await freshBridge( 'cart', srv, { latency: () => 120, fail: () => {
 		const f = failNext;
 		failNext = false;
 		return f;
 	} } );
 	await store.fetchCart();
-	cartForm.qty = { a: 5 }; // the shopper types 5 and presses Update cart
+	cart.form.qty = { a: 5 }; // the shopper types 5 and presses Update cart
 	cart.updateCart();
 	await sleep( 300 );
 	await store.whenIdle();
 	ok( qty( store.getState(), 'a' ) === 5, `after Update cart the drawer shows 5 (got ${ qty( store.getState(), 'a' ) })` );
-	cartForm.qty = { a: 2 }; // types 2; this Update cart fails and leaves its update_cart field in the form
+	cart.form.qty = { a: 2 }; // types 2; this Update cart fails and leaves its update_cart field in the form
 	failNext = true;
 	cart.updateCart();
 	await sleep( 300 );
 	await store.whenIdle();
-	ok( cartForm.hidden && lines( srv.cart ) === 'a=5', `precondition: the failed Update cart left its field, server a=5 (got ${ cartForm.hidden } ${ lines( srv.cart ) })` );
+	ok( cart.form.hidden && lines( srv.cart ) === 'a=5', `precondition: the failed Update cart left its field, server a=5 (got ${ cart.form.hidden } ${ lines( srv.cart ) })` );
 	const refreshes = triggers.filter( t => t === 'wc_update_cart' ).length;
 	store.changeQuantity( 'a', 1 ); // drawer +: 5 → 6
 	await sleep( 100 );
@@ -921,7 +945,7 @@ await scenario( 'bridge, cart page: Update cart → the drawer re-reads; a drawe
 	await store.whenIdle();
 	ok( ! pressed, 'Update cart is ignored while the form is stale' );
 	ok( lines( srv.cart ) === 'a=6', `the drawer-triggered refresh posts no stale quantity: server a=6 (got ${ lines( srv.cart ) })` );
-	ok( cartForm.qty.a === 6 && qty( store.getState(), 'a' ) === 6, `page form and drawer both show 6 (got ${ cartForm.qty.a } / ${ qty( store.getState(), 'a' ) })` );
+	ok( cart.form.qty.a === 6 && qty( store.getState(), 'a' ) === 6, `page form and drawer both show 6 (got ${ cart.form.qty.a } / ${ qty( store.getState(), 'a' ) })` );
 	ok( triggers.filter( t => t === 'wc_update_cart' ).length - refreshes === 1, 'one wc_update_cart for the drawer change' );
 	ok( srv.maxInFlight === 1, `no overlap (max ${ srv.maxInFlight })` );
 } );
@@ -1083,6 +1107,113 @@ await scenario( 'bridge: a request jQuery had out before the bridge loaded is wa
 	ok( late?.end && late.end - early.end < 400, `the later request went once the early one ended, not at the cap (${ late?.end - early.end } ms after)` );
 	ok( srv.maxInFlight === 1, `no overlap (max ${ srv.maxInFlight })` );
 } ) );
+
+await scenario( 'bridge, cart page: the form an Update cart brings back stays blocked while a drawer change is pending (follow-up 1)', async () => {
+	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 2 } ], { latency: () => 300 } );
+	const { store, cart } = await freshBridge( 'cart', srv, { latency: () => 300 } );
+	await store.fetchCart();
+	cart.form.qty = { a: 3 };
+	cart.updateCart(); // Update cart 2 → 3, out until 300 ms; cart.js has the form blocked
+	await sleep( 60 );
+	store.changeQuantity( 'a', 1 ); // drawer +: its write leaves at 460 ms, behind the re-read
+	await sleep( 300 ); // 360 ms: cart.js has swapped in the answer's form, showing 3
+	ok( cart.form.qty.a === 3 && cart.form.classList.contains( 'processing' ), `the form cart.js swapped in is blocked (got qty ${ cart.form.qty.a }, blocked ${ cart.form.classList.contains( 'processing' ) })` );
+	await sleep( 400 ); // 760 ms: the drawer's write is out
+	const pressed = cart.updateCart(); // Update cart (or Enter) with the stale 3
+	await sleep( 1500 );
+	await store.whenIdle();
+	ok( ! pressed, 'Update cart is ignored while the drawer change is pending' );
+	ok( lines( srv.cart ) === 'a=4' && qty( store.getState(), 'a' ) === 4 && cart.form.qty.a === 4, `server, drawer and form keep the drawer's 4 (got ${ lines( srv.cart ) } / ${ qty( store.getState(), 'a' ) } / ${ cart.form.qty.a })` );
+	ok( ! cart.form.classList.contains( 'processing' ), 'the refreshed form is unblocked' );
+	ok( srv.maxInFlight === 1, `no overlap (max ${ srv.maxInFlight })` );
+} );
+
+await scenario( 'bridge: a request out before the bridge loaded and aborted then keeps the queue until the server is done with it (follow-up 2)', async () => {
+	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: () => 30 } );
+	let early;
+	let nativeAbort;
+	const { store, $ } = await freshBridge( 'checkout', srv, { latency: ( r, e ) => e.data.get( 'n' ) === 'early' ? 600 : 50 }, {
+		before: async ( { store }, { $ } ) => {
+			await store.fetchCart();
+			nativeAbort = XMLHttpRequest.prototype.abort;
+			early = $.ajax( { type: 'POST', url: UOR, data: 'n=early' } ); // checkout.js's DOM-ready update_order_review
+		},
+	} );
+	await sleep( 50 );
+	let other;
+	$.ajax( { type: 'POST', url: 'https://shop.test/?wc-ajax=bwfan_insert_abandoned_cart', data: 'n=other', xhr: () => ( other = new XMLHttpRequest() ) } ).abort();
+	ok( other.aborted, 'a request sent after the bridge loaded, aborted while the early one is out, really aborts' );
+	early.abort(); // checkout.js's next update aborts it ...
+	ok( early.state() === 'rejected' && early.statusText === 'abort', 'the caller sees the abort at once' );
+	$.ajax( { type: 'POST', url: UOR, data: 'n=next' } ); // ... and sends its own
+	store.changeQuantity( 'a', 1 );
+	await sleep( 1500 );
+	await store.whenIdle();
+	const e = find( srv, 'classic:update_order_review', 'early' );
+	const next = find( srv, 'classic:update_order_review', 'next' );
+	const write = find( srv, 'cart/update-item' );
+	ok( next?.start >= e.end && write?.start >= e.end, `the next update and the drawer write waited for the server to finish the aborted request (early ended ${ e.end - e.start } ms in; next at ${ next?.start - e.start }, write at ${ write?.start - e.start })` );
+	ok( during( srv, e ).every( x => x.route === 'classic:bwfan_insert_abandoned_cart' ), `nothing queued overlapped it (got ${ during( srv, e ).map( x => x.route ) })` );
+	ok( XMLHttpRequest.prototype.abort === nativeAbort, 'XMLHttpRequest.prototype.abort is restored once the wait is over' );
+} );
+
+await scenario( 'bridge: a caller\'s timeout counts from its turn, not while it waits for one (follow-up 3)', async () => {
+	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: ( r ) => r === 'cart/update-item' ? 500 : 30 } );
+	const { store, $ } = await freshBridge( 'checkout', srv, { latency: ( r, e ) => e.data.get( 'n' ) === 'slow' ? 400 : 60 } );
+	await store.fetchCart();
+	store.changeQuantity( 'a', 1 );
+	await sleep( 450 ); // the drawer write is out for 500 ms
+	const queued = $.ajax( { type: 'POST', url: UOR, data: 'n=queued', timeout: 300 } );
+	await sleep( 900 );
+	ok( queued.state() === 'resolved' && find( srv, 'classic:update_order_review', 'queued' ), `a request that waited past its timeout is sent and answered (got ${ queued.state() } ${ queued.statusText })` );
+	await store.whenIdle();
+	const slow = $.ajax( { type: 'POST', url: UOR, data: 'n=slow', timeout: 200 } );
+	await sleep( 300 );
+	ok( slow.statusText === 'timeout', `one that runs past its timeout once sent still times out (got ${ slow.statusText })` );
+	await sleep( 300 );
+	await store.whenIdle();
+} );
+
+await scenario( 'bridge, checkout page load: update_order_review goes first, then the drawer\'s one read (follow-up 4)', async () => {
+	for ( const loaded of [ 'before DOM ready', 'after the update had ended' ] ) {
+		const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: () => 200 } );
+		const { store, $ } = await freshBridge( 'checkout', srv, { latency: () => 200, initCheckout: true }, {
+			read: true,
+			before: loaded === 'before DOM ready' ? null : async ( ctx, jq ) => {
+				jq.ready();
+				await sleep( 400 );
+			},
+		} );
+		await sleep( 900 );
+		await store.whenIdle();
+		ok( routes( srv ).join( ' ' ) === 'classic:update_order_review cart' && qty( store.getState(), 'a' ) === 1,
+			`module loaded ${ loaded }: the update, then one read; the drawer has the cart (got ${ routes( srv ).join( ' ' ) })` );
+		$( document.body ).trigger( 'update_checkout' ); // a later burst still re-reads once
+		await sleep( 700 );
+		await store.whenIdle();
+		ok( routes( srv ).slice( 2 ).join( ' ' ) === 'classic:update_order_review cart', `then a later update, one re-read (got ${ routes( srv ).slice( 2 ).join( ' ' ) })` );
+	}
+} );
+
+await scenario( 'bridge, a checkout page without Lean Cart markup (FunnelKit): no reads at all (follow-up 4)', async () => {
+	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: () => 60 } );
+	const { store, $ } = await freshBridge( 'checkout', srv, { latency: () => 100, drawer: false, initCheckout: true }, { read: true } );
+	await sleep( 400 );
+	$( document.body ).trigger( 'update_checkout' );
+	await sleep( 400 );
+	await store.whenIdle();
+	ok( routes( srv ).join( ' ' ) === 'classic:update_order_review classic:update_order_review', `two updates, no cart read (got ${ routes( srv ).join( ' ' ) })` );
+} );
+
+await scenario( 'bridge, cart page and other pages: init makes the first read when asked to', async () => {
+	for ( const page of [ 'cart', 'order-pay' ] ) {
+		const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: () => 60 } );
+		const { store } = await freshBridge( page, srv, {}, { read: true } );
+		await sleep( 200 );
+		await store.whenIdle();
+		ok( routes( srv ).join( ' ' ) === 'cart' && qty( store.getState(), 'a' ) === 1, `${ page }: one read (got ${ routes( srv ).join( ' ' ) })` );
+	}
+} );
 
 console.log( failed ? `\n${ failed } check(s) failed` : '\nall checks passed' );
 process.exit( failed ? 1 : 0 );
