@@ -371,6 +371,35 @@
 	padding: 12px 0;
 }
 
+/* ── Classic checkout lines ────────────────────────────────────── */
+
+/* The shortcode checkout's order review: Lean Cart's lines sit before
+   WooCommerce's table and replace its item rows once they show (the mount
+   loses [hidden] then). !important: this is a state, like [hidden], and
+   themes lay these rows out with long selectors. */
+
+.lean-cart--checkout[hidden] {
+	display: none !important;
+}
+
+.lean-cart--checkout:not([hidden]) ~ .woocommerce-checkout-review-order-table :is(thead, tr.cart_item) {
+	display: none !important;
+}
+
+.lean-cart--checkout {
+	margin-bottom: var(--spacing-s, 12px);
+	border-bottom: 1px solid var(--lc-border);
+}
+
+/* A Mix-and-Match box: its contents take their own row under the box. */
+.lean-cart--checkout .cart-item--container {
+	flex-wrap: wrap;
+}
+
+.lean-cart--checkout:focus {
+	outline: none; /* the fallback target when the last line goes, not a control */
+}
+
 /* ── Reduced motion ────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: reduce) {

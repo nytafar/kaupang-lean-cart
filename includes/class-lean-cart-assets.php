@@ -118,6 +118,12 @@ class Lean_Cart_Assets {
 				'shipping'     => __( 'Frakt', 'kaupang-lean-cart' ),
 				'freeShipping' => __( 'Gratis', 'kaupang-lean-cart' ),
 				'updateError'  => __( 'Kunne ikke oppdatere', 'kaupang-lean-cart' ),
+				/* translators: the classic checkout's order lines (screen reader name) */
+				'checkoutLines' => __( 'Varer i bestillingen', 'kaupang-lean-cart' ),
+				/* translators: screen reader, after a quantity change: 1: product name, 2: new quantity */
+				'lineQuantity' => __( '%1$s, antall %2$s', 'kaupang-lean-cart' ),
+				/* translators: screen reader, after a line was removed: product name */
+				'lineRemoved'  => __( '%s er fjernet', 'kaupang-lean-cart' ),
 			] ),
 		];
 

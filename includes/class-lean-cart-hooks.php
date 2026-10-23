@@ -14,6 +14,41 @@ class Lean_Cart_Hooks {
 		add_action( 'wp_enqueue_scripts', [ $this, 'disable_legacy_fragments' ], 20 );
 		add_filter( 'woocommerce_cart_fragment_refresh', '__return_false' );
 		add_filter( 'rest_post_dispatch', [ $this, 'sync_cart_cookies' ], 10, 3 );
+		add_action( 'woocommerce_checkout_order_review', [ $this, 'print_checkout_lines' ], 5 );
+	}
+
+	/**
+	 * Mount for Lean Cart's item lines in the shortcode checkout's order review.
+	 *
+	 * Printed before the review table (woocommerce_order_review runs at 10),
+	 * outside the fragment update_order_review replaces. Hidden until
+	 * modules/checkout-lines.js has shown lines in it; until then, and if the
+	 * JS never runs, WooCommerce's own rows are the summary. Not on FunnelKit
+	 * checkout pages, which fire this hook in their own layout and have their
+	 * own order summary.
+	 */
+	public function print_checkout_lines(): void {
+		if ( ! is_checkout() || is_wc_endpoint_url() || ( function_exists( 'wfacp_template' ) && wfacp_template() ) ) {
+			return;
+		}
+
+		/**
+		 * Filter: kaupang/lean-cart/checkout_lines
+		 *
+		 * Return false to keep WooCommerce's own item rows in the classic
+		 * checkout's order review instead of Lean Cart's editable lines.
+		 *
+		 * @param bool $enabled Default true.
+		 */
+		if ( ! apply_filters( 'kaupang/lean-cart/checkout_lines', true ) ) {
+			return;
+		}
+
+		echo '<div class="lean-cart lean-cart--checkout" data-lean-cart="checkout-lines" tabindex="-1" hidden>'
+			. '<div data-lean-cart="checkout-items" role="list"></div>'
+			. '<div data-lean-cart="error" role="alert" hidden></div>'
+			. '<div class="screen-reader-text" data-lean-cart="checkout-status" role="status"></div>'
+			. '</div>';
 	}
 
 	/**

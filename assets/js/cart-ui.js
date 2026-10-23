@@ -42,7 +42,12 @@ function renderMetaRow( row ) {
 
 // ── Item rendering ──────────────────────────────────────────────
 
-function renderItem( item ) {
+/**
+ * One line's markup. `price` defaults to the line total; the checkout lines
+ * show the subtotal before coupons. Buttons are type="button": a line may sit
+ * inside a form (the classic checkout), where a plain button would submit it.
+ */
+export function renderItem( item, price = item.lineTotal ) {
 	if ( item.isChild ) return ''; // Children rendered inside parent.
 
 	const image = item.image
@@ -83,12 +88,12 @@ function renderItem( item ) {
 			</div>
 			<div class="cart-item-actions">
 				<div class="quantity-control">
-					<button data-cart-action="decrease" aria-label="${esc( `Reduser antall ${ item.title }` ) }"${ canDecrease ? '' : ' disabled' }>&minus;</button>
+					<button type="button" data-cart-action="decrease" aria-label="${esc( `Reduser antall ${ item.title }` ) }"${ canDecrease ? '' : ' disabled' }>&minus;</button>
 					<span data-cart-quantity aria-label="Antall">${ item.quantity }</span>
-					<button data-cart-action="increase" aria-label="${esc( `Øk antall ${ item.title }` ) }"${ canIncrease ? '' : ' disabled' }>&plus;</button>
+					<button type="button" data-cart-action="increase" aria-label="${esc( `Øk antall ${ item.title }` ) }"${ canIncrease ? '' : ' disabled' }>&plus;</button>
 				</div>
-				<span class="cart-item-price">${esc( item.lineTotal ) }</span>
-				<button class="cart-item-remove" data-cart-action="remove" aria-label="${esc( i18n.remove + ' ' + item.title ) }">
+				<span class="cart-item-price">${esc( price ) }</span>
+				<button type="button" class="cart-item-remove" data-cart-action="remove" aria-label="${esc( i18n.remove + ' ' + item.title ) }">
 					${ removeIcon }
 				</button>
 			</div>
@@ -167,7 +172,7 @@ function render( state ) {
 
 	// Items
 	const itemsHtml = hasItems
-		? topLevelItems.map( renderItem ).join( '' )
+		? topLevelItems.map( item => renderItem( item ) ).join( '' )
 		: '';
 
 	mountPoints.items.forEach( el => {

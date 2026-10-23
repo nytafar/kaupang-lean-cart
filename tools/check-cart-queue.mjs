@@ -131,7 +131,12 @@ function ok( cond, label ) {
 async function freshStore( { mnm = false, sameBus = false } = {} ) {
 	if ( ! sameBus ) {
 		globalThis.document = new EventTarget();
-		document.createElement = () => ( { set innerHTML( v ) { this.value = v; } } );
+		// decodeEntities sets innerHTML and reads value; cart-ui's esc() sets textContent and reads innerHTML.
+		document.createElement = () => ( {
+			set innerHTML( v ) { this.value = v; },
+			get innerHTML() { return this.value; },
+			set textContent( v ) { this.value = String( v ).replace( /&/g, '&amp;' ).replace( /</g, '&lt;' ).replace( />/g, '&gt;' ); },
+		} );
 	}
 	const store = await import( pathToFileURL( path.join( jsDir, 'cart-store.js' ) ).href + '?run=' + ++run );
 	if ( mnm ) {
@@ -538,6 +543,7 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 	const triggers = [];  // events triggered on document.body
 	const globals = [];   // jQuery's global ajax events: { name, jq, data, t }
 	const removed = [];
+	const blocks = [];    // selectors blockUI was called on
 	const prefilters = [];
 	const fire = ( name, args = [] ) => ( handlers[ name ] || [] ).slice().forEach( fn => fn( { type: name }, ...args ) );
 	const checkoutForm = page === 'checkout' ? fakeElement() : null;
@@ -558,7 +564,7 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 			remove() { removed.push( sel ); if ( el && sel.includes( 'update_cart' ) ) el.hidden = false; return wrap; },
 			not( s ) { return el?.classList.contains( s.slice( 1 ) ) ? $( null ) : wrap; },
 			addClass( c ) { el?.classList.add( c ); return wrap; },
-			block() { return wrap; },
+			block() { blocks.push( sel ); return wrap; },
 		};
 		return wrap;
 	};
@@ -781,7 +787,7 @@ function fakeJQuery( srv, page, { latency = () => 50, fail = () => false, hang =
 		};
 	}
 
-	return { $, ready, triggers, globals, removed, dom, checkout, checkoutForm, cart };
+	return { $, ready, triggers, globals, removed, blocks, dom, checkout, checkoutForm, cart };
 }
 
 // The page's globals and markup, as classicPage() reads them.
@@ -796,8 +802,8 @@ const bridgeUrl = () => pathToFileURL( path.join( jsDir, 'modules/classic-pages.
 
 // A fresh store with the bridge on `page`. `before( ctx, jq )` runs before the bridge loads; DOM ready
 // comes after it, unless `before` made it come first (jq.ready()). `read`: init's option.
-async function freshBridge( page, srv, jqOptions, { before, read } = {} ) {
-	const ctx = await freshStore();
+async function freshBridge( page, srv, jqOptions, { before, read, mnm } = {} ) {
+	const ctx = await freshStore( { mnm } );
 	const jq = fakeJQuery( srv, page, jqOptions );
 	globalThis.location = { href: page === 'checkout' ? 'https://shop.test/kassen/' : CART_URL };
 	setPage( { jQuery: jq.$, checkout: page === 'checkout', cart: page !== 'checkout', dom: jq.dom } );
@@ -1128,6 +1134,24 @@ await scenario( 'bridge, cart page: the form an Update cart brings back stays bl
 	ok( srv.maxInFlight === 1, `no overlap (max ${ srv.maxInFlight })` );
 } );
 
+await scenario( 'bridge, cart page: a drawer + whose debounce fires while Update cart is out counts from the updated cart', async () => {
+	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 2 } ], { latency: () => 300 } );
+	const { store, cart } = await freshBridge( 'cart', srv, { latency: () => 500 } );
+	await store.fetchCart();
+	cart.form.qty = { a: 3 };
+	cart.updateCart(); // Update cart 2 → 3, out until 500 ms
+	await sleep( 65 );
+	store.changeQuantity( 'a', 1 ); // its write takes its turn at 465 ms, behind the form post
+	await sleep( 2500 );
+	await store.whenIdle();
+	await sleep( 100 );
+	await store.whenIdle();
+	const write = find( srv, 'cart/update-item' );
+	ok( write && field( write, 'quantity' ) === 4, `the write sends 4, one above the updated 3 (got ${ write && field( write, 'quantity' ) })` );
+	ok( lines( srv.cart ) === 'a=4' && qty( store.getState(), 'a' ) === 4 && cart.form.qty.a === 4, `server, drawer and form at 4 (got ${ lines( srv.cart ) } / ${ qty( store.getState(), 'a' ) } / ${ cart.form.qty.a })` );
+	ok( srv.maxInFlight === 1, `no overlap (max ${ srv.maxInFlight })` );
+} );
+
 await scenario( 'bridge: a request out before the bridge loaded and aborted then keeps the queue until the server is done with it (follow-up 2)', async () => {
 	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1 } ], { latency: () => 30 } );
 	let early;
@@ -1213,6 +1237,96 @@ await scenario( 'bridge, cart page and other pages: init makes the first read wh
 		await store.whenIdle();
 		ok( routes( srv ).join( ' ' ) === 'cart' && qty( store.getState(), 'a' ) === 1, `${ page }: one read (got ${ routes( srv ).join( ' ' ) })` );
 	}
+} );
+
+// ── Checkout lines (modules/checkout-lines.js) ──────────────────────────────
+
+await scenario( 'checkout lines: a read with no lines leaves WooCommerce\'s rows showing', async () => {
+	const srv = fakeServer( [], { latency: () => 60 } );
+	const list = { innerHTML: '', children: [], setAttribute() {}, contains: () => false, addEventListener() {} };
+	let root;
+	await freshBridge( 'checkout', srv, { latency: () => 100, initCheckout: true }, {
+		read: true,
+		before: ( ctx, jq ) => {
+			root = { hidden: true, querySelector: ( sel ) => sel.includes( 'checkout-items' ) ? list : null, closest: () => jq.checkoutForm };
+			jq.dom[ '[data-lean-cart="checkout-lines"]' ] = root;
+		},
+	} );
+	await sleep( 600 );
+	ok( routes( srv ).includes( 'cart' ) && root.hidden, `after an empty read the mount is still hidden (read ${ routes( srv ).includes( 'cart' ) }, hidden ${ root.hidden })` );
+} );
+
+await scenario( 'checkout lines: where focus goes after a re-render', async () => {
+	const { focusTarget } = await import( pathToFileURL( path.join( jsDir, 'modules/checkout-lines.js' ) ).href );
+	const line = ( key, quantity, maximum = 9999 ) => ( { key, quantity, quantityLimits: { minimum: 1, maximum, multiple_of: 1 } } );
+	const items = [ line( 'a', 2 ), line( 'b', 1 ), line( 'c', 3, 3 ) ];
+	const cases = [
+		[ 'the same control while it can take focus', { key: 'a', action: 'increase', index: 0 }, { key: 'a', action: 'increase' } ],
+		[ '− at the minimum (disabled): the line\'s +', { key: 'b', action: 'decrease', index: 1 }, { key: 'b', action: 'increase' } ],
+		[ '+ at the stock limit (disabled): the line\'s −', { key: 'c', action: 'increase', index: 2 }, { key: 'c', action: 'decrease' } ],
+		[ 'the title link stays on the title', { key: 'b', action: 'title', index: 1 }, { key: 'b', action: 'title' } ],
+		[ 'a removed line: the remove button of the line now in its place', { key: 'x', action: 'remove', index: 1 }, { key: 'b', action: 'remove' } ],
+		[ 'the removed last line: the remove button of the line before', { key: 'x', action: 'remove', index: 3 }, { key: 'c', action: 'remove' } ],
+	];
+	for ( const [ name, had, want ] of cases ) {
+		const got = focusTarget( had, items );
+		ok( JSON.stringify( got ) === JSON.stringify( want ), `${ name } (got ${ JSON.stringify( got ) })` );
+	}
+	ok( focusTarget( { key: 'x', action: 'remove', index: 0 }, [] ) === null, 'no line left: null (the mount takes focus)' );
+	const single = { key: 's', quantity: 1, quantityLimits: { minimum: 1, maximum: 1, multiple_of: 1 } };
+	ok( focusTarget( { key: 's', action: 'remove', index: 0 }, [ single ] ).action === 'remove', 'a sold-individually line keeps focus on remove' );
+} );
+
+await scenario( 'checkout lines: shown once painted, totals marked updating on a change, a cross-tab read brings the totals in step once', async () => {
+	const srv = fakeServer( [ { key: 'a', id: 1, quantity: 1, children: [ { key: 'c1', id: 9, quantity: 2 } ] } ], { latency: () => 60 } );
+	const clicks = [];
+	const list = { innerHTML: '', children: [], setAttribute() {}, contains: () => false, addEventListener: ( t, fn ) => clicks.push( fn ) };
+	const status = { textContent: '' };
+	let root;
+	const { store, triggers, blocks, checkoutForm } = await freshBridge( 'checkout', srv, { latency: () => 100, initCheckout: true }, {
+		read: true,
+		mnm: true,
+		before: ( ctx, jq ) => {
+			root = { hidden: true, querySelector: ( sel ) => sel.includes( 'checkout-items' ) ? list : status, closest: () => jq.checkoutForm };
+			jq.dom[ '[data-lean-cart="checkout-lines"]' ] = root;
+		},
+	} );
+	ok( root.hidden, 'hidden before the first read (WooCommerce\'s rows show)' );
+	await sleep( 600 );
+	await store.whenIdle();
+	ok( ! root.hidden && /data-cart-item-key="a"/.test( list.innerHTML ) && /data-cart-item-key="c1"/.test( list.innerHTML ), `after the read: shown, the box and its contents rendered (hidden ${ root.hidden })` );
+	ok( ( list.innerHTML.match( /type="button"/g ) || [] ).length === 3 && ! /<button(?![^>]*type="button")/.test( list.innerHTML ), 'every button is type="button" (the lines sit inside form.checkout)' );
+	ok( ( list.innerHTML.match( /data-cart-action=/g ) || [] ).length === 3 && /cart-item--child" data-cart-item-key="c1"/.test( list.innerHTML ), 'the box contents are listed under the box, without controls of their own' );
+	const before = triggers.filter( t => t === 'update_checkout' ).length;
+	const blocked = blocks.length;
+	// The shopper presses + on the box in the summary.
+	const btn = { dataset: { cartAction: 'increase' } };
+	const row = { dataset: { cartItemKey: 'a' }, querySelector: () => ( { textContent: 'a' } ) };
+	btn.closest = () => row;
+	clicks.forEach( fn => fn( { target: { closest: () => btn } } ) );
+	store.changeQuantity( 'a', 1 );
+	ok( blocks.slice( blocked ).includes( '.woocommerce-checkout-review-order-table' ), 'the change marks the classic totals as updating at once' );
+	await sleep( 1200 );
+	await store.whenIdle();
+	ok( triggers.filter( t => t === 'update_checkout' ).length - before === 1, `one update_checkout for the change (got ${ triggers.filter( t => t === 'update_checkout' ).length - before })` );
+	ok( status.textContent === 'a, antall 2', `screen reader status: "<name>, antall 2" (got "${ status.textContent }")` );
+	// Another tab sets the box to 5; this tab's storage event re-reads.
+	srv.cart[ 0 ].quantity = 5;
+	const t = Date.now();
+	await store.fetchCart();
+	await sleep( 600 );
+	await store.whenIdle();
+	ok( after( srv, t ).map( e => e.route ).join( ' ' ) === 'cart classic:update_order_review cart', `the read, one update_order_review, one re-read, then quiet (got ${ after( srv, t ).map( e => e.route ).join( ' ' ) })` );
+	// While an order is being placed, a changed read triggers nothing.
+	checkoutForm.classList.add( 'processing' );
+	srv.cart[ 0 ].quantity = 6;
+	const n = triggers.length;
+	await store.fetchCart();
+	await sleep( 100 );
+	ok( ! triggers.slice( n ).includes( 'update_checkout' ), 'not while the order is being placed' );
+	checkoutForm.classList.remove( 'processing' );
+	await sleep( 600 );
+	await store.whenIdle();
 } );
 
 console.log( failed ? `\n${ failed } check(s) failed` : '\nall checks passed' );

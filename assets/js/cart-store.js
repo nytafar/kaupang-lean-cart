@@ -109,6 +109,9 @@ function normalizeItem( raw ) {
 		quantityLimits: raw.quantity_limits || { minimum: 1, maximum: 9999, multiple_of: 1 },
 		unitPrice:      formatPrice( parseInt( raw.prices?.price || 0, 10 ) ),
 		lineTotal:      formatPrice( parseInt( raw.totals?.line_total || 0, 10 ) + parseInt( raw.totals?.line_total_tax || 0, 10 ) ),
+		// Before coupons, as WooCommerce's own order review rows (its subtotal row adds these up).
+		// ponytail: incl. tax like every Lean Cart price; a shop displaying cart prices excl. tax would need the display mode here.
+		lineSubtotal:   formatPrice( parseInt( raw.totals?.line_subtotal || 0, 10 ) + parseInt( raw.totals?.line_subtotal_tax || 0, 10 ) ),
 		permalink:      raw.permalink || '',
 		badges:         [],
 		children:       [],
@@ -173,6 +176,7 @@ let confirmed = null;
 const pending = new Map(); // op id → fn( draft ) applying that op optimistically
 let lastId = 0;
 let queue = Promise.resolve();
+let outdated = false; // the server's cart changed outside the store since `confirmed`
 const LOCK = 'kaupang-lean-cart'; // Web Lock: tabs of the same shop share one cart session
 const LOCK_WAIT_MS = 25000;       // a tab suspended while holding the lock must not freeze this one
 const WRITE_SETTLE_MS = 10000;    // a timed-out write may still finish in PHP; let it before re-reading
@@ -285,6 +289,7 @@ function send( id, call, { read = false } = {} ) {
 			const raw = await call();
 			if ( raw ) {
 				confirmed = normalizeCart( raw );
+				outdated = false;
 			}
 			return raw;
 		} catch ( err ) {
@@ -294,6 +299,7 @@ function send( id, call, { read = false } = {} ) {
 			const cart = err?.data?.cart || await api.getCart().catch( () => null );
 			if ( cart ) {
 				confirmed = normalizeCart( cart );
+				outdated = false;
 			}
 			throw err;
 		} finally {
@@ -301,6 +307,15 @@ function send( id, call, { read = false } = {} ) {
 			publish( read ? 'read' : 'write' );
 		}
 	}, { lock: ! read } );
+}
+
+/**
+ * Say the server's cart may have changed outside the store (the classic cart
+ * page's form post, a coupon). The next quantity change re-reads the cart in
+ * its own turn before turning its delta into a quantity.
+ */
+export function invalidate() {
+	outdated = true;
 }
 
 // ── Debounce map (per item key) ─────────────────────────────────
@@ -335,7 +350,7 @@ function debouncedUpdate( key, delta ) {
 			const quantity = clampQuantity( item, item.quantity + entry.delta );
 			draft.itemCount += quantity - item.quantity;
 			item.quantity = quantity;
-			item.lineTotal = '...'; // Will be replaced by server response.
+			item.lineTotal = item.lineSubtotal = '...'; // Will be replaced by server response.
 		} );
 	}
 	entry.delta += delta;
@@ -344,7 +359,12 @@ function debouncedUpdate( key, delta ) {
 	return new Promise( ( resolve ) => {
 		entry.waiters.push( resolve );
 		entry.timer = setTimeout( () => {
-			send( entry.id, () => {
+			send( entry.id, async () => {
+				if ( outdated ) {
+					// A classic page request changed the cart meanwhile: count from it, not from before it.
+					confirmed = normalizeCart( await api.getCart() );
+					outdated = false;
+				}
 				const item = confirmed?.items.find( i => i.key === key );
 				if ( ! item ) {
 					// The line is gone or re-keyed: say so, and the failure path re-reads the cart.

@@ -23,6 +23,8 @@
  *   On the cart page the form stays blocked until a refresh made after the
  *   last drawer change has replaced it, so it never posts older quantities.
  * - Neither happens while an order is being placed; a failed one catches up.
+ * - Checkout lines: on the checkout the order review's item lines are Lean
+ *   Cart's where PHP printed their mount (checkout-lines.js).
  */
 
 import { wait } from '../cart-api.js';
@@ -150,6 +152,9 @@ export function init( store, $, { cartUrl, read = false } ) {
 					const timer = timeout > 0 && setTimeout( () => jqXHR.abort( 'timeout' ), timeout );
 					xhr.addEventListener( 'loadend', () => {
 						clearTimeout( timer );
+						// In its turn: the next quantity write re-reads the cart first. Not
+						// after the submit, as for the drawer's re-read (finished()).
+						if ( kind !== 'checkout' ) store.invalidate();
 						if ( reflects !== null && xhr.status >= 200 && xhr.status < 300 ) shown = Math.max( shown, reflects );
 						done();
 					} );
@@ -233,6 +238,12 @@ export function init( store, $, { cartUrl, read = false } ) {
 		refreshGen = gen;
 		$( document.body ).trigger( 'wc_update_cart' ); // cart.js sends it synchronously
 		refreshGen = null;
+	}
+
+	// The checkout's order review shows Lean Cart's lines where PHP printed their
+	// mount (kaupang/lean-cart/checkout_lines). If this fails, WooCommerce's rows stay.
+	if ( page === 'checkout' && document.querySelector( '[data-lean-cart="checkout-lines"]' ) ) {
+		import( './checkout-lines.js' ).then( m => m.init( store, $ ) ).catch( () => {} );
 	}
 
 	document.addEventListener( 'lean-cart:updated', ( e ) => {

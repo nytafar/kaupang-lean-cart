@@ -4,6 +4,14 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+- The shortcode checkout's order review shows Lean Cart's item lines: the drawer's line markup with `+`, `−` and remove, all through the cart's queue, so the shopper can edit the order where they review it. Coupons, shipping, fees, VAT, totals and payment stay WooCommerce's and refresh through `update_order_review` after each change; the totals are marked as updating until then. Lines show their subtotal before coupons, as WooCommerce's rows do. WooCommerce's own rows stay until Lean Cart has painted its lines (and without JS). Focus stays on the control used (or the nearest one that can take it), and a screen-reader status reads the new quantity or the removal. Mix-and-Match box contents are listed under the box without controls. Not on FunnelKit checkout pages, which have their own summary. On by default; `add_filter( 'kaupang/lean-cart/checkout_lines', '__return_false' )` keeps WooCommerce's rows. New strings `checkoutLines`, `lineQuantity`, `lineRemoved` in `kaupang/lean-cart/i18n`.
+- `store.invalidate()`: the cart changed outside the store; the next quantity change re-reads it in its own turn. Additive. Normalized items carry `lineSubtotal`.
+- Lean Cart's line buttons are `type="button"`, so a line inside a form never submits it.
+
+### Fixed
+- Classic cart page: a drawer `+`/`−` whose write took its turn after a cart-changing classic request (Update cart 2→3, then `+` within the debounce) counted from the cart read before that request and lost the change (ended at 3, not 4). The bridge now invalidates the store's cart when a classic request ends, and the write re-reads the cart in its turn first.
+
 ## [0.2.2] - 2026-10-23
 
 ### Fixed
