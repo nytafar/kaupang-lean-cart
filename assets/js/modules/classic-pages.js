@@ -3,7 +3,7 @@
  * (cart.js) and shortcode checkout (checkout.js).
  *
  * Both edit the same cart session, which WooCommerce saves whole at the end of
- * every request, so neither may run while the other is out. cart-init loads
+ * every request, so neither may run while the other is out. cart-init starts
  * this where WooCommerce's cart or checkout params are on the page;
  * classicPage() decides from the markup.
  *

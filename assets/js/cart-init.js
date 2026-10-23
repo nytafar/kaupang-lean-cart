@@ -9,6 +9,11 @@
 import * as store from './cart-store.js';
 import * as ui from './cart-ui.js';
 import * as add from './cart-add.js';
+// Static: on the shortcode checkout the bridge and the checkout lines must be
+// running when the store is seeded with the page's cart. A dynamic import()
+// resolves behind the page's DOM-ready scripts, 0.2–0.4 s later, and the
+// shopper sees WooCommerce's rows swap for Lean Cart's lines.
+import * as classicPages from './modules/classic-pages.js';
 
 const config = window.leanCartConfig;
 
@@ -185,13 +190,15 @@ if ( config.cart ) {
 }
 
 // WooCommerce's classic cart page and shortcode checkout run their own jQuery
-// cart requests; the bridge keeps them and the drawer in step. Loaded where
+// cart requests; the bridge keeps them and the drawer in step. Started where
 // cart.js or checkout.js runs; the module checks the page markup itself.
 if ( window.jQuery && ( window.wc_checkout_params || window.wc_cart_params ) ) {
 	const read = hasSession && classicCheckout;
-	import( './modules/classic-pages.js' )
-		.then( m => m.init( store, window.jQuery, { cartUrl: config.cartUrl, read } ) )
-		.catch( () => read && store.fetchCart() );
+	try {
+		classicPages.init( store, window.jQuery, { cartUrl: config.cartUrl, read } );
+	} catch {
+		if ( read ) store.fetchCart();
+	}
 }
 
 // ── 6. Public API ───────────────────────────────────────────────
