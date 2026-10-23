@@ -25,6 +25,8 @@
  * - Neither happens while an order is being placed; a failed one catches up.
  */
 
+import { wait } from '../cart-api.js';
+
 // WooCommerce core's classic cart and checkout endpoints. Every one of them
 // loads the cart session and saves it when done.
 const ENDPOINT = /[?&]wc-ajax=(update_order_review|checkout|apply_coupon|remove_coupon|update_shipping_method|get_cart_totals|add_to_cart|remove_from_cart)(?:[&#]|$)/;
@@ -197,7 +199,7 @@ export function init( store, $, { cartUrl, read = false } ) {
 			if ( ! later.has( jqXHR ) && ! --earlier ) resolve();
 		} ) ).then( () => Promise.all( runOn ) );
 		// The cap counts from now: these requests left before this loaded.
-		const cap = new Promise( ( r ) => AbortSignal.timeout( TURN_CAP_MS ).addEventListener( 'abort', r ) );
+		const cap = wait( TURN_CAP_MS ); // falls back to setTimeout before Safari 16
 		const waited = Promise.race( [ out, cap ] ).finally( () => {
 			earlier = 0;
 			if ( proto.open === opened ) proto.open = openXhr;
