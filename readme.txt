@@ -4,7 +4,7 @@ Tags: woocommerce, store-api, cart, mini-cart, developer-friendly
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.2.1
+Stable tag: 0.2.2
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -198,6 +198,17 @@ Create a PHP module class in `includes/modules/` that hooks into `kaupang/lean-c
 No screenshots. Lean Cart is a headless cart layer with no admin interface — all visual output is controlled by your theme.
 
 == Changelog ==
+
+= 0.2.2 – 2026-10-23 =
+
+**Fixed**
+* WooCommerce's classic cart page and shortcode checkout now cooperate with the drawer. WooCommerce's own cart and checkout requests (its classic `wc-ajax` endpoints, and cart.js's form posts and remove/undo links on the cart page) take turns in the cart's queue with the drawer's writes, so `update_order_review` no longer saves its older cart over a drawer change. The bridge holds the request's `XMLHttpRequest.send()` until its turn, so callers keep jQuery's real jqXHR: `readyState`, `status`, response headers, `abort()` and the global ajax events behave as jQuery's own (Vipps' "checkout totals are updating" check passes once an update has settled). A classic request keeps its turn while it is out, up to 65 s (nginx answers 504 at 60 s); one aborted in flight keeps it until the server has answered, and one aborted before its turn is never sent. A request jQuery already had out when the bridge loaded is waited for the same way, also when checkout.js aborts it meanwhile. A caller's jQuery `timeout` counts from the request's turn, not while it waits for one.
+* A drawer change refreshes the page once its writes have landed (checkout: `update_checkout`; cart page: `wc_update_cart`; the empty-cart page is left alone instead of reloading). On the cart page the form stays blocked from the drawer change until a refresh made after it has replaced the form, including a form cart.js swaps in from an earlier Update cart meanwhile, so "Update cart" or Enter cannot post older quantities over the drawer's. A classic request (Update cart, coupon, remove link, shipping, order review) makes the drawer re-read the cart once; not on a page without Lean Cart markup (FunnelKit's checkout pages). On the shortcode checkout the drawer's first read of the page is the one after checkout.js's page-load `update_order_review`, which no longer waits behind a separate read.
+* The order submit (`wc-ajax=checkout`) waits for pending drawer changes and holds the queue until it settles. While an order is being placed (`form.checkout.processing`, also through a 3-D Secure or Vipps step) the page is not refreshed and the drawer does not re-read; when the order fails and the form is handed back, the page catches up once.
+* The bridge (`modules/classic-pages.js`) loads where cart.js or checkout.js runs and acts only on the classic cart page and the shortcode checkout form.
+
+**Added**
+* `lean-cart:updated` carries `detail.source`: `'optimistic'`, `'write'` or `'read'` (`fetchCart`). Additive.
 
 = 0.2.1 – 2026-10-23 =
 
