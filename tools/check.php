@@ -115,4 +115,13 @@ $ok( false === apply_filters( 'woocommerce_cart_fragment_refresh', true ), 'lega
 $ok( isset( $own( 'woocommerce_checkout_order_review' )['Lean_Cart_Hooks::print_checkout_lines'] ), 'the checkout lines mount prints in the order review' );
 $ok( isset( $own( 'template_redirect' )['Lean_Cart_Notices::wrap_notices'] ), 'page-cache-safe notices are hooked' );
 
+// Storefront load budget (conventions.md §5B).
+if (class_exists('WP_CLI') && is_array(WP_CLI::get_runner()->find_command_to_run(['kaupang-assets', 'audit']))) {
+	$audit = WP_CLI::runcommand('kaupang-assets audit --plugins=kaupang-lean-cart --budget', ['return' => 'all', 'exit_error' => false]);
+	echo $audit->stdout . "\n";
+	$ok($audit->return_code === 0 && $audit->stdout !== '', 'kaupang-assets audit --plugins=kaupang-lean-cart --budget exits 0');
+} else {
+	echo "  skip storefront budget: `wp kaupang-assets audit` is not available here\n";
+}
+
 $failed ? WP_CLI::error( "{$failed} check(s) failed" ) : WP_CLI::success( 'Lean Cart loads through core script modules.' );

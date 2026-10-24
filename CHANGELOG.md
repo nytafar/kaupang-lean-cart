@@ -5,6 +5,7 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 ## [Unreleased]
 
 ### Changed
+- check.php runs the load budget audit.
 - The cart's JS loads as WordPress core script modules (`@kaupang/lean-cart/<name>`). Core prints the page's one import map, so pages with Interactivity blocks (the FAQ accordion) no longer carry two maps, and it preloads the static imports (`config`, `api`, `store`, `ui`, `add`), so the three-level import chain becomes one round. Extension and classic-page modules are dynamic imports (preloaded on the shortcode checkout, as before). Each file is versioned with its own modification time.
 - The config is core's script module data (`script_module_data_@kaupang/lean-cart/config`, read by the new `cart-config.js`); the `kaupang/lean-cart/config` filter is unchanged. The shortcode checkout's cart seed goes into it when core prints it in the footer.
 - `lean-cart.css` is no longer render-blocking: it styles only the drawer and the checkout lines, so `cart-init.js` adds it on the first interaction (`pointerdown`, `keydown`, `lean-cart:open`), before the page's other stylesheets so theme overrides still win. It stays in `<head>` on the shortcode checkout and lean-checkout's page. `kaupang/lean-cart/disable_styles` still turns it off; `wp_dequeue_style()` alone no longer does.
