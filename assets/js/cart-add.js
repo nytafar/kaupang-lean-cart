@@ -13,7 +13,7 @@
  *   - [data-cart-action="add"] is still handled by cart-init.js
  */
 
-import * as store from './cart-store.js';
+import * as store from '@kaupang/lean-cart/store';
 
 // ── Form submit ────────────────────────────────────────────────
 

@@ -9,7 +9,7 @@
  * children under their parent containers.
  */
 
-const config = window.leanCartConfig;
+import config from '@kaupang/lean-cart/config';
 
 export function init( store ) {
 	// Feed MnM child quantities into the Store API add-to-cart call.

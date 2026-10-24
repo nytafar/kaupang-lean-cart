@@ -13,8 +13,6 @@
  * hides those only next to a visible mount.
  */
 
-const { i18n } = window.leanCartConfig;
-
 // What the review's totals have to agree with: the lines and their quantities.
 const linesOf = ( state ) => JSON.stringify( state.items.map( i => [ i.key, i.quantity, i.children.map( c => [ c.key, c.quantity ] ) ] ) );
 
@@ -25,9 +23,9 @@ const format = ( s, ...args ) => args.reduce( ( out, a, n ) => out.replace( `%${
  *
  * @param {object} store - The cart store (getState).
  * @param {object} $     - jQuery, with blockUI.
- * @param {object} ui    - cart-ui's { renderItem, paintLines }.
+ * @param {object} ui    - cart-ui's { renderItem, paintLines, i18n }.
  */
-export function init( store, $, { renderItem, paintLines } ) {
+export function init( store, $, { renderItem, paintLines, i18n } ) {
 	const root = document.querySelector( '[data-lean-cart="checkout-lines"]' );
 	const list = root?.querySelector( '[data-lean-cart="checkout-items"]' );
 	if ( ! list ) return;

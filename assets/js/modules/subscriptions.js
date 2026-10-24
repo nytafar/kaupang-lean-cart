@@ -6,7 +6,7 @@
  * with billing summaries, badges, and meta rows.
  */
 
-const config = window.leanCartConfig;
+import config from '@kaupang/lean-cart/config';
 
 function buildBillingSummary( ext ) {
 	const periods = config.subscriptionPeriods || {};

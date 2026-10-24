@@ -7,9 +7,8 @@
  * modules, and an EventTarget-based event bus on `document`.
  */
 
-import * as api from './cart-api.js';
-
-const config = window.leanCartConfig;
+import * as api from '@kaupang/lean-cart/api';
+import config from '@kaupang/lean-cart/config';
 
 // ── Currency formatter ──────────────────────────────────────────
 
@@ -323,7 +322,7 @@ export function invalidate() {
 
 /**
  * Start from a cart the page was rendered with (a Store API cart response,
- * leanCartConfig.cart), so the lines paint without waiting for a read. Only
+ * the config's `cart`), so the lines paint without waiting for a read. Only
  * while no answer has come yet; published as a 'read'. Call it once extension
  * modules have registered their normalizers. The page's own requests may
  * change the cart after it was rendered, so the next quantity change re-reads.

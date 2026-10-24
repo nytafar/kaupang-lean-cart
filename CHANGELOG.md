@@ -4,6 +4,18 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 
 ## [Unreleased]
 
+### Changed
+- The cart's JS loads as WordPress core script modules (`@kaupang/lean-cart/<name>`). Core prints the page's one import map, so pages with Interactivity blocks (the FAQ accordion) no longer carry two maps, and it preloads the static imports (`config`, `api`, `store`, `ui`, `add`), so the three-level import chain becomes one round. Extension and classic-page modules are dynamic imports (preloaded on the shortcode checkout, as before). Each file is versioned with its own modification time.
+- The config is core's script module data (`script_module_data_@kaupang/lean-cart/config`, read by the new `cart-config.js`); the `kaupang/lean-cart/config` filter is unchanged. The shortcode checkout's cart seed goes into it when core prints it in the footer.
+- `lean-cart.css` is no longer render-blocking: it styles only the drawer and the checkout lines, so `cart-init.js` adds it on the first interaction (`pointerdown`, `keydown`, `lean-cart:open`), before the page's other stylesheets so theme overrides still win. It stays in `<head>` on the shortcode checkout and lean-checkout's page. `kaupang/lean-cart/disable_styles` still turns it off; `wp_dequeue_style()` alone no longer does.
+
+### Removed
+- Lean Cart's own import map, its `script_loader_tag` rewrite to `type="module"` and the `kaupang/lean-cart/importmap_imports` filter (its one user, lean-checkout, registers its own modules with core now).
+- `window.leanCartConfig`. No reader outside the plugin was found (themes on the myrvann, nyta and zenso sites, kaupang-wholesale, kaupang-crm, lean-checkout, server scripts). `window.leanCart` and the `lean-cart:*` events are unchanged.
+
+### Added
+- `tools/check.php` (`wp eval-file`): one import map, the static imports preloaded, dynamic ones only mapped, config as module data, where the stylesheet loads, every JS import a registered id, and the hooks that work outside page views. `tools/load-budget.php` and a README load map.
+
 ## [0.2.3] - 2026-10-24
 
 ### Added

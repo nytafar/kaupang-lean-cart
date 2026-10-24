@@ -29,6 +29,16 @@ window.leanCartConfig = {
 	currency: { locale: 'nb-NO', code: 'NOK', minorUnit: 2 },
 	i18n: {},
 };
+
+// The modules import each other by the ids WordPress maps (@kaupang/lean-cart/<name>); resolve them to the files.
+// The config module is replaced by one that reads window.leanCartConfig on every access, so a scenario can swap it.
+register( 'data:text/javascript,' + encodeURIComponent( `export async function resolve( specifier, context, next ) {
+	const name = specifier.match( /^@kaupang\\/lean-cart\\/(.+)$/ )?.[ 1 ];
+	if ( ! name ) return next( specifier, context );
+	if ( name === 'config' ) return { url: 'data:text/javascript,export default new Proxy( {}, { get: ( _, k ) => window.leanCartConfig[ k ] } );', shortCircuit: true };
+	const file = [ 'api', 'store', 'ui', 'add', 'init' ].includes( name ) ? 'cart-' + name + '.js' : 'modules/' + name + '.js';
+	return { url: ${ JSON.stringify( pathToFileURL( jsDir ).href + '/' ) } + file, shortCircuit: true };
+}` ) );
 const realTimeout = AbortSignal.timeout.bind( AbortSignal );
 // Production time limits (20 s request, 10 s settle, 25 s lock wait) at 1/50 speed.
 async function scaledTime( fn ) {
@@ -1638,9 +1648,9 @@ await scenario( 'seed: cart-init applies it after the extension modules\' normal
 register( 'data:text/javascript,' + encodeURIComponent( `export async function resolve( specifier, context, next ) {
 	const broken = context.parentURL && new URL( context.parentURL ).searchParams.get( 'broken' );
 	if ( ! broken ) return next( specifier, context );
-	if ( specifier.endsWith( '/' + broken + '.js' ) ) return { url: 'file:///nonexistent/' + broken + '.js', shortCircuit: true };
+	if ( specifier.endsWith( '/' + broken + '.js' ) || specifier.endsWith( '/' + broken ) ) return { url: 'file:///nonexistent/' + broken + '.js', shortCircuit: true };
 	const resolved = await next( specifier, context );
-	return { ...resolved, url: resolved.url.split( '?' )[ 0 ] + '?broken=' + broken };
+	return resolved.url.startsWith( 'file:' ) ? { ...resolved, url: resolved.url.split( '?' )[ 0 ] + '?broken=' + broken } : resolved;
 }` ) );
 
 await scenario( 'the bridge and the checkout lines import nothing themselves (a dynamic import of a module with imports resolves after the checkout\'s DOM-ready scripts)', async () => {

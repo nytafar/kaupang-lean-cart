@@ -5,8 +5,10 @@
  * Handles nonce management, 403 retry, and error normalization.
  */
 
-const { storeApiBase } = window.leanCartConfig;
-let nonce = window.leanCartConfig.nonce;
+import config from '@kaupang/lean-cart/config';
+
+const { storeApiBase } = config;
+let nonce = config.nonce;
 
 // A request that never answers would hold the store's write queue; abort it so
 // the store re-fetches the real cart and moves on.

@@ -1,48 +1,63 @@
 <?php
 /**
- * Script and style registration, localization.
+ * Script modules and the drawer stylesheet.
  *
- * Enqueues the cart JS entry point as a native ES module and
- * injects the leanCartConfig object with Store API nonce,
- * currency settings, active modules, and i18n strings.
+ * Core script modules (one import map, printed by core): the entry point
+ * @kaupang/lean-cart/init with its static imports preloaded, and the extension
+ * and classic-page modules as dynamic imports. The config goes through
+ * script_module_data_@kaupang/lean-cart/config.
  */
 
 defined( 'ABSPATH' ) || exit;
 
 class Lean_Cart_Assets {
 
-	private string $js_ver;
+	/** Statically imported modules: id suffix => [ file, static deps ]. */
+	private const CORE = [
+		'config' => [ 'cart-config.js', [] ],
+		'api'    => [ 'cart-api.js', [ 'config' ] ],
+		'store'  => [ 'cart-store.js', [ 'api', 'config' ] ],
+		'ui'     => [ 'cart-ui.js', [ 'config' ] ],
+		'add'    => [ 'cart-add.js', [ 'store' ] ],
+	];
+
+	/** Extension modules (modules/<name>.js) => their key in config.modules. */
+	private const EXTENSIONS = [
+		'subscriptions'         => 'subscriptions',
+		'mix-and-match'         => 'mixAndMatch',
+		'all-products-subs'     => 'allProductsSubs',
+		'sublium-subscriptions' => 'subliumSubscriptions',
+	];
+
+	private string $css_url = '';
 
 	public function __construct() {
-		$this->js_ver = $this->compute_js_ver();
-
 		add_action( 'wp_enqueue_scripts', [ $this, 'enqueue' ] );
-		add_filter( 'script_loader_tag', [ $this, 'add_module_type' ], 10, 2 );
-		add_action( 'wp_head', [ $this, 'print_importmap' ], 1 );
+		add_filter( 'script_module_data_@kaupang/lean-cart/config', [ $this, 'module_data' ] );
 	}
 
-	private function compute_js_ver(): string {
-		$js_dir = KAUPANG_LEAN_CART_PATH . 'assets/js/';
-		$ver = 0;
-		foreach ( glob( $js_dir . '*.js' ) as $f ) {
-			$ver = max( $ver, filemtime( $f ) );
-		}
-		foreach ( glob( $js_dir . 'modules/*.js' ) as $f ) {
-			$ver = max( $ver, filemtime( $f ) );
-		}
-		return (string) ( $ver ?: KAUPANG_LEAN_CART_VERSION );
+	/** Which extension modules this shop runs: modules/<name> => active. */
+	private static function extensions(): array {
+		return [
+			'subscriptions'         => class_exists( 'WC_Subscriptions' ),
+			'mix-and-match'         => class_exists( 'WC_Mix_and_Match' ),
+			'all-products-subs'     => class_exists( 'WCS_ATT' ),
+			'sublium-subscriptions' => class_exists( '\Sublium_WCS\Plugin' ) || function_exists( 'sublium_init' ),
+		];
 	}
 
 	public function enqueue(): void {
-		$this->enqueue_styles();
-		$this->enqueue_scripts();
+		$this->register_styles();
+		$this->enqueue_modules();
 	}
 
-	private function enqueue_styles(): void {
+	private function register_styles(): void {
+		$this->css_url = '';
+
 		/**
 		 * Filter: kaupang/lean-cart/disable_styles
 		 *
-		 * Return true to prevent the plugin from enqueuing its CSS.
+		 * Return true to prevent the plugin from loading its CSS.
 		 * Useful when the theme provides its own cart styles.
 		 *
 		 * @param bool $disable Default false.
@@ -52,40 +67,76 @@ class Lean_Cart_Assets {
 		}
 
 		$css_file = KAUPANG_LEAN_CART_PATH . 'assets/css/lean-cart.css';
+		$ver      = file_exists( $css_file ) ? (string) filemtime( $css_file ) : KAUPANG_LEAN_CART_VERSION;
 
-		wp_enqueue_style(
-			'kaupang-lean-cart-styles',
-			KAUPANG_LEAN_CART_URL . 'assets/css/lean-cart.css',
-			[],
-			file_exists( $css_file ) ? filemtime( $css_file ) : KAUPANG_LEAN_CART_VERSION
-		);
+		wp_register_style( 'kaupang-lean-cart-styles', KAUPANG_LEAN_CART_URL . 'assets/css/lean-cart.css', [], $ver );
+		$this->css_url = add_query_arg( 'ver', $ver, KAUPANG_LEAN_CART_URL . 'assets/css/lean-cart.css' );
+
+		// The checkout lines show with the page. Elsewhere everything it styles
+		// sits in the closed drawer, and cart-init.js fetches it on the first
+		// interaction (config.drawerCss).
+		if ( Lean_Cart_Hooks::checkout_lines() ) {
+			wp_enqueue_style( 'kaupang-lean-cart-styles' );
+		}
 	}
 
-	private function enqueue_scripts(): void {
-		wp_enqueue_script(
-			'kaupang-lean-cart-init',
-			KAUPANG_LEAN_CART_URL . 'assets/js/cart-init.js',
-			[],
-			$this->js_ver,
-			[ 'strategy' => 'defer', 'in_footer' => true ]
-		);
+	private function enqueue_modules(): void {
+		$id  = static fn( string $name ): string => '@kaupang/lean-cart/' . $name;
+		$url = static fn( string $file ): string => KAUPANG_LEAN_CART_URL . 'assets/js/' . $file;
+		$ver = static fn( string $file ): string => (string) filemtime( KAUPANG_LEAN_CART_PATH . 'assets/js/' . $file );
 
-		$config = $this->build_config();
+		foreach ( self::CORE as $name => [ $file, $deps ] ) {
+			wp_register_script_module( $id( $name ), $url( $file ), array_map( $id, $deps ), $ver( $file ) );
+		}
 
-		wp_add_inline_script(
-			'kaupang-lean-cart-init',
-			// JSON_HEX_TAG: shop text in the config (i18n strings from filters) can't close the script.
-			'window.leanCartConfig = ' . wp_json_encode( $config, JSON_HEX_TAG ) . ';',
-			'before'
+		// A page with the checkout lines runs the bridge, the lines and the
+		// extensions at once (imported by cart-init.js): preload them there.
+		// The JS still import()s them, so one that fails to load leaves the drawer.
+		$import  = Lean_Cart_Hooks::seeds_checkout() ? 'static' : 'dynamic';
+		$dynamic = [];
+		foreach ( array_keys( array_filter( self::extensions() ) ) as $name ) {
+			wp_register_script_module( $id( $name ), $url( "modules/{$name}.js" ), [ $id( 'config' ) ], $ver( "modules/{$name}.js" ) );
+			$dynamic[] = [ 'id' => $id( $name ), 'import' => $import ];
+		}
+		// No imports of their own (cart-init.js passes what they need).
+		foreach ( [ 'classic-pages', 'checkout-lines' ] as $name ) {
+			wp_register_script_module( $id( $name ), $url( "modules/{$name}.js" ), [], $ver( "modules/{$name}.js" ) );
+			$dynamic[] = [ 'id' => $id( $name ), 'import' => $import ];
+		}
+
+		wp_enqueue_script_module(
+			$id( 'init' ),
+			$url( 'cart-init.js' ),
+			array_merge( array_map( $id, array_keys( self::CORE ) ), $dynamic ),
+			$ver( 'cart-init.js' )
 		);
 
 		/**
 		 * Action: kaupang/lean-cart/enqueue_scripts
 		 *
-		 * Fires after lean cart scripts are enqueued.
+		 * Fires after lean cart's script modules are enqueued.
 		 * Use this to enqueue additional scripts that depend on the cart.
 		 */
 		do_action( 'kaupang/lean-cart/enqueue_scripts' );
+	}
+
+	/**
+	 * The config, printed by core in the footer as JSON for cart-config.js.
+	 * Built when it prints: on the shortcode checkout the cart is calculated by then.
+	 */
+	public function module_data( array $data ): array {
+		$config = $this->build_config();
+
+		$config['drawerCss'] = $this->css_url && ! wp_style_is( 'kaupang-lean-cart-styles', 'enqueued' ) && ! wp_style_is( 'kaupang-lean-cart-styles', 'done' )
+			? $this->css_url
+			: '';
+
+		$cart = Lean_Cart_Hooks::seeds_checkout() ? Lean_Cart_Hooks::cart_seed() : null;
+		if ( $cart ) {
+			$config['cart'] = $cart;
+		}
+
+		return $data + $config;
 	}
 
 	private function build_config(): array {
@@ -103,12 +154,7 @@ class Lean_Cart_Assets {
 				'locale'    => str_replace( '_', '-', get_locale() ),
 			],
 			'showVariationLabels' => apply_filters( 'kaupang/lean-cart/show_variation_labels', false ),
-			'modules'      => [
-				'subscriptions'        => class_exists( 'WC_Subscriptions' ),
-				'mixAndMatch'          => class_exists( 'WC_Mix_and_Match' ),
-				'allProductsSubs'      => class_exists( 'WCS_ATT' ),
-				'subliumSubscriptions' => class_exists( '\Sublium_WCS\Plugin' ) || function_exists( 'sublium_init' ),
-			],
+			'modules'      => array_combine( self::EXTENSIONS, self::extensions() ),
 			'i18n'         => apply_filters( 'kaupang/lean-cart/i18n', [
 				'emptyCart'    => __( 'Handlekurven er tom', 'kaupang-lean-cart' ),
 				'item'         => __( 'vare', 'kaupang-lean-cart' ),
@@ -138,79 +184,4 @@ class Lean_Cart_Assets {
 		 */
 		return apply_filters( 'kaupang/lean-cart/config', $config );
 	}
-
-	/**
-	 * Print an import map so sub-module URLs include a cache-busting version.
-	 */
-	public function print_importmap(): void {
-		if ( ! $this->js_ver ) {
-			return;
-		}
-
-		$base = KAUPANG_LEAN_CART_URL . 'assets/js/';
-		$v    = $this->js_ver;
-
-		/**
-		 * Filter: kaupang/lean-cart/importmap_imports
-		 *
-		 * A page may contain only ONE import map, so sibling plugins that ship
-		 * ES modules (e.g. lean-checkout) add their entries here instead of
-		 * printing a second <script type="importmap"> the browser would ignore.
-		 *
-		 * @param array<string,string> $imports Bare-URL => versioned-URL map.
-		 */
-		$defaults = [
-			$base . 'cart-store.js' => $base . 'cart-store.js?ver=' . $v,
-			$base . 'cart-api.js'   => $base . 'cart-api.js?ver=' . $v,
-			$base . 'cart-ui.js'    => $base . 'cart-ui.js?ver=' . $v,
-			$base . 'cart-add.js'   => $base . 'cart-add.js?ver=' . $v,
-		];
-
-		// Extension modules load via dynamic import from cart-init; without
-		// map entries their URLs carry no version and edits never bust the
-		// browser cache.
-		foreach ( glob( KAUPANG_LEAN_CART_PATH . 'assets/js/modules/*.js' ) as $module ) {
-			$name = 'modules/' . basename( $module );
-			$defaults[ $base . $name ] = $base . $name . '?ver=' . $v;
-		}
-
-		$imports = apply_filters( 'kaupang/lean-cart/importmap_imports', $defaults );
-
-		echo '<script type="importmap">' . wp_json_encode( [ 'imports' => $imports ] ) . '</script>' . "\n";
-
-		// A page that carries the cart paints its lines as soon as the modules
-		// run: fetch them all now (cart-init imports the bridge, the lines and the
-		// extensions dynamically) instead of one import after the other.
-		// ponytail: all of Lean Cart's modules, also extensions this shop lacks (a few KB).
-		if ( Lean_Cart_Hooks::seeds_checkout() ) {
-			foreach ( array_intersect_key( $imports, $defaults ) as $url ) {
-				echo '<link rel="modulepreload" href="' . esc_url( $url ) . '">' . "\n";
-			}
-		}
-	}
-
-	/**
-	 * Add type="module" to the cart entry-point script tag.
-	 *
-	 * WordPress outputs type="text/javascript" by default.
-	 * We must replace it (not append) to avoid a duplicate type attribute,
-	 * which would cause the browser to use the first one (text/javascript)
-	 * and silently break ES module imports.
-	 */
-		public function add_module_type( string $tag, string $handle ): string {
-			if ( 'kaupang-lean-cart-init' !== $handle ) {
-				return $tag;
-			}
-			// Only the entry point's own <script> tag: $tag also holds the inline
-			// config, whose shop text (product descriptions) may contain "type=".
-			return (string) preg_replace_callback(
-				'/<script\b[^>]*\bid=(["\'])kaupang-lean-cart-init-js\1[^>]*>/',
-				function ( $m ) {
-					return preg_match( '/\stype=/', $m[0] )
-						? preg_replace( '/\stype=(["\'])[^"\']*\1/', ' type="module"', $m[0] )
-						: str_replace( '<script', '<script type="module"', $m[0] );
-				},
-				$tag
-			);
-		}
 }

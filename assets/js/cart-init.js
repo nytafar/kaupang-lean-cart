@@ -6,12 +6,11 @@
  * bridges to theme navigation, and loads extension modules.
  */
 
-import * as store from './cart-store.js';
-import * as ui from './cart-ui.js';
-import * as add from './cart-add.js';
-import { wait } from './cart-api.js';
-
-const config = window.leanCartConfig;
+import * as store from '@kaupang/lean-cart/store';
+import * as ui from '@kaupang/lean-cart/ui';
+import * as add from '@kaupang/lean-cart/add';
+import { wait } from '@kaupang/lean-cart/api';
+import config from '@kaupang/lean-cart/config';
 
 // ── 1. Initialize UI (cache mount points, subscribe to events) ──
 
@@ -158,24 +157,41 @@ document.addEventListener( 'lean-cart:open', () => {
 	}
 } );
 
+// The drawer's stylesheet (lean-cart.css), fetched on the first interaction
+// instead of blocking the first paint. It goes before the page's other
+// stylesheets, where WordPress printed it before, so the theme's overrides
+// still win. PHP leaves drawerCss empty where the sheet is already in <head>
+// (the checkout lines, lean-checkout's page) or styles are off.
+if ( config.drawerCss ) {
+	const loadCss = () => {
+		if ( document.getElementById( 'kaupang-lean-cart-styles-css' ) ) return;
+		const link = Object.assign( document.createElement( 'link' ), { rel: 'stylesheet', id: 'kaupang-lean-cart-styles-css', href: config.drawerCss } );
+		const first = document.head.querySelector( 'link[rel="stylesheet"], style' );
+		first ? first.before( link ) : document.head.append( link );
+	};
+	for ( const type of [ 'pointerdown', 'keydown', 'lean-cart:open' ] ) {
+		document.addEventListener( type, loadCss, { once: true, passive: true } );
+	}
+}
+
 // ── 5. Load extension modules conditionally ─────────────────────
 
 const extensions = [];
 
 if ( config.modules.subscriptions ) {
-	extensions.push( import( './modules/subscriptions.js' ).then( m => m.init( store ) ) );
+	extensions.push( import( '@kaupang/lean-cart/subscriptions' ).then( m => m.init( store ) ) );
 }
 
 if ( config.modules.mixAndMatch ) {
-	extensions.push( import( './modules/mix-and-match.js' ).then( m => m.init( store ) ) );
+	extensions.push( import( '@kaupang/lean-cart/mix-and-match' ).then( m => m.init( store ) ) );
 }
 
 if ( config.modules.allProductsSubs ) {
-	extensions.push( import( './modules/all-products-subs.js' ).then( m => m.init( store ) ) );
+	extensions.push( import( '@kaupang/lean-cart/all-products-subs' ).then( m => m.init( store ) ) );
 }
 
 if ( config.modules.subliumSubscriptions ) {
-	extensions.push( import( './modules/sublium-subscriptions.js' ).then( m => m.init( store ) ) );
+	extensions.push( import( '@kaupang/lean-cart/sublium-subscriptions' ).then( m => m.init( store ) ) );
 }
 
 // WooCommerce's classic cart page and shortcode checkout run their own jQuery
@@ -189,8 +205,8 @@ if ( config.modules.subliumSubscriptions ) {
 // themselves (what they need is passed in), so they run with the seed.
 if ( window.jQuery && ( window.wc_checkout_params || window.wc_cart_params ) ) {
 	const read = hasSession && classicCheckout;
-	const lines = classicCheckout && document.querySelector( '[data-lean-cart="checkout-lines"]' ) && import( './modules/checkout-lines.js' );
-	const bridge = import( './modules/classic-pages.js' ).then( m => m.init( store, window.jQuery, { cartUrl: config.cartUrl, read, wait } ) );
+	const lines = classicCheckout && document.querySelector( '[data-lean-cart="checkout-lines"]' ) && import( '@kaupang/lean-cart/checkout-lines' );
+	const bridge = import( '@kaupang/lean-cart/classic-pages' ).then( m => m.init( store, window.jQuery, { cartUrl: config.cartUrl, read, wait } ) );
 	bridge.catch( () => read && store.fetchCart() );
 	if ( lines ) {
 		extensions.push( Promise.all( [ lines, bridge ] ).then( ( [ m ] ) => m.init( store, window.jQuery, ui ) ).catch( () => {} ) );

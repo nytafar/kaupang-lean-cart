@@ -5,7 +5,7 @@
  * add-to-cart flow and normalizes Sublium Store API extension data.
  */
 
-const config = window.leanCartConfig;
+import config from '@kaupang/lean-cart/config';
 
 function findPlanInput( form ) {
 	return form.querySelector(

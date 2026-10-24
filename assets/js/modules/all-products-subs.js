@@ -6,7 +6,7 @@
  * purchaseMode on each cart item.
  */
 
-const config = window.leanCartConfig;
+import config from '@kaupang/lean-cart/config';
 
 export function init( store ) {
 	// Lift the chosen purchase plan (APfS scheme radios) into the

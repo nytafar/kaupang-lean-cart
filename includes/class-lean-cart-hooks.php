@@ -15,8 +15,6 @@ class Lean_Cart_Hooks {
 		add_filter( 'woocommerce_cart_fragment_refresh', '__return_false' );
 		add_filter( 'rest_post_dispatch', [ $this, 'sync_cart_cookies' ], 10, 3 );
 		add_action( 'woocommerce_checkout_order_review', [ $this, 'print_checkout_lines' ], 5 );
-		// After the shortcode has rendered (and calculated) the cart, before the footer scripts print (20).
-		add_action( 'wp_footer', [ $this, 'seed_checkout_cart' ], 1 );
 	}
 
 	/**
@@ -24,7 +22,7 @@ class Lean_Cart_Hooks {
 	 * checkout page, not its endpoints (order-pay, order-received), not a
 	 * FunnelKit checkout (its own layout and summary), and the filter on.
 	 */
-	private static function checkout_lines(): bool {
+	public static function checkout_lines(): bool {
 		if ( ! is_checkout() || is_wc_endpoint_url() || ( function_exists( 'wfacp_template' ) && wfacp_template() ) ) {
 			return false;
 		}
@@ -41,28 +39,15 @@ class Lean_Cart_Hooks {
 	}
 
 	/**
-	 * Whether this page carries the cart for the checkout lines
-	 * (leanCartConfig.cart, printed by seed_checkout_cart()).
+	 * Whether this page carries the cart for the checkout lines (the config's
+	 * `cart`, added by Lean_Cart_Assets::module_data() when core prints the
+	 * config in the footer, once the shortcode has calculated the cart).
 	 *
 	 * ponytail: the shortcode in the page content only, not WooCommerce's
 	 * "classic shortcode" block; that page keeps painting after the first read.
 	 */
 	public static function seeds_checkout(): bool {
 		return self::checkout_lines() && wc_post_content_has_shortcode( 'woocommerce_checkout' ) && WC()->cart && ! WC()->cart->is_empty();
-	}
-
-	/**
-	 * Give the checkout lines the cart in the page (leanCartConfig.cart), so
-	 * they paint with the page instead of after the first cart read, seconds
-	 * in. Added to the config script in the footer, once the shortcode has
-	 * calculated the cart.
-	 */
-	public function seed_checkout_cart(): void {
-		$cart = self::seeds_checkout() ? self::cart_seed() : null;
-		if ( $cart ) {
-			// JSON_HEX_TAG: shop text can't close the script.
-			wp_add_inline_script( 'kaupang-lean-cart-init', 'window.leanCartConfig.cart = ' . wp_json_encode( $cart, JSON_HEX_TAG ) . ';', 'before' );
-		}
 	}
 
 	/**

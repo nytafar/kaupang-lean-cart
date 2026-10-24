@@ -6,8 +6,10 @@
  * Subscribes to lean-cart:updated events from the store.
  */
 
-const config = window.leanCartConfig;
-const { i18n } = config;
+import config from '@kaupang/lean-cart/config';
+
+// Exported for the checkout lines, which import nothing themselves.
+export const { i18n } = config;
 
 // ── Mount point cache ───────────────────────────────────────────
 
