@@ -1576,6 +1576,44 @@ await scenario( 'markup: product text is escaped for attributes too', async () =
 	ok( ! html.includes( 'onfocus="' ) && ! html.includes( 'p"q' ), 'a name or URL with a quote cannot add an attribute' );
 } );
 
+await scenario( 'drawer: the shipping row tells "not calculated yet" from free, and a line\'s image is a sized thumbnail, never the original', async () => {
+	const config = window.leanCartConfig;
+	window.leanCartConfig = { ...config, imageSizes: '70px', i18n: { shipping: 'Frakt', freeShipping: 'Gratis', shippingPending: 'Beregnes i kassen' } };
+	try {
+		await freshStore();
+		const totals = { innerHTML: '' };
+		const items = fakeList();
+		items.parentElement = { querySelector: () => null };
+		document.querySelectorAll = ( sel ) => sel === '[data-lean-cart="totals"]' ? [ totals ] : sel === '[data-lean-cart="items"]' ? [ items ] : [];
+		const ui = await import( pathToFileURL( path.join( jsDir, 'cart-ui.js' ) ).href + '?run=' + run );
+		ui.init();
+		const image = { src: 'https://shop.test/orig.jpg', thumbnail: 'https://shop.test/orig-1320x1666.jpg', srcset: 'https://shop.test/orig-238x300.jpg 238w, https://shop.test/orig-1320x1666.jpg 1320w', alt: '' };
+		const line = { key: 'a', id: 1, name: 'Te', quantity: 1, prices: { price: '100' }, totals: {}, images: [ image ] };
+		const rates = ( ...selected ) => [ { shipping_rates: selected.map( s => ( { selected: s } ) ) } ];
+		const cases = [
+			[ 'a new session (no rates yet)', { needs_shipping: true, shipping_rates: [], totals: { total_shipping: '0' } }, 'Beregnes i kassen' ],
+			[ 'rates, none selected', { needs_shipping: true, shipping_rates: rates( false, false ), totals: { total_shipping: '0' } }, 'Beregnes i kassen' ],
+			[ 'one package of two with no rate selected', { needs_shipping: true, shipping_rates: [ ...rates( true ), ...rates( false ) ], totals: { total_shipping: '0' } }, 'Beregnes i kassen' ],
+			[ 'a selected free rate', { needs_shipping: true, shipping_rates: rates( false, true ), totals: { total_shipping: '0', total_shipping_tax: '0' } }, 'Gratis' ],
+			[ 'a selected paid rate', { needs_shipping: true, shipping_rates: rates( true ), totals: { total_shipping: '5520', total_shipping_tax: '1380' } }, '69' ],
+			[ 'nothing to ship', { needs_shipping: false, totals: {} }, null ],
+		];
+		for ( const [ label, raw, want ] of cases ) {
+			// A store of its own on the same bus: its seed publishes the cart to the UI.
+			( await freshStore( { sameBus: true } ) ).store.seed( { items: [ line ], ...raw } );
+			const row = totals.innerHTML.match( /Frakt<\/span>\s*<span class="totals-value[^"]*">([^<]*)</ );
+			ok( want === null ? ! totals.innerHTML.includes( 'Frakt' ) && totals.innerHTML.includes( 'totals-row' ) : !! row?.[ 1 ].includes( want ), `${ label }: shipping ${ want === null ? 'row left out' : `reads "${ want }"` } (got ${ row ? `"${ row[ 1 ] }"` : 'no row' })` );
+		}
+		const img = items.html.match( /<img [^>]*>/ )?.[ 0 ] || '';
+		ok( /src="https:\/\/shop\.test\/orig-1320x1666\.jpg"/.test( img ) && ! img.includes( 'orig.jpg' ), `the src is the thumbnail and the original is nowhere (${ img })` );
+		ok( img.includes( `srcset="${ image.srcset }"` ) && img.includes( 'sizes="70px"' ) && img.includes( 'width="56" height="56"' ) && img.includes( 'loading="lazy"' ) && img.includes( 'decoding="async"' ), 'srcset, the config\'s sizes, width/height, lazy and async decoding' );
+		const bare = ui.renderItem( { key: 'b', title: 'b', image: { src: 'x.jpg', srcset: '', alt: 'b' }, permalink: '', metaRows: [], badges: [], children: [], quantity: 1, quantityLimits: { minimum: 1, maximum: 9 }, lineTotal: '1 kr' } );
+		ok( /<img src="x\.jpg" width="56"/.test( bare ) && ! bare.includes( 'srcset' ) && ! bare.includes( 'sizes=' ), 'without a srcset: the src alone, no empty srcset or sizes' );
+	} finally {
+		window.leanCartConfig = config;
+	}
+} );
+
 await scenario( 'drawer: focus stays on the control used across a repaint; an error shows only where focus is', async () => {
 	await freshStore();
 	const items = fakeList();

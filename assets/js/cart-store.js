@@ -106,7 +106,8 @@ function normalizeItem( raw ) {
 		id:             raw.id,
 		type:           raw.type || 'simple',
 		title:          name,
-		image:          raw.images?.[0] ? { src: raw.images[0].src, alt: raw.images[0].alt || name } : null,
+		// The catalog thumbnail plus its srcset: never the original upload as the src.
+		image:          raw.images?.[0] ? { src: raw.images[0].thumbnail || raw.images[0].src, srcset: raw.images[0].srcset || '', alt: raw.images[0].alt || name } : null,
 		quantity:       raw.quantity,
 		quantityLimits: raw.quantity_limits || { minimum: 1, maximum: 9999, multiple_of: 1 },
 		unitPrice:      formatPrice( parseInt( raw.prices?.price || 0, 10 ) ),
@@ -152,6 +153,11 @@ function normalizeCart( raw ) {
 		},
 		itemCount:     ( raw.items || [] ).reduce( ( sum, i ) => sum + i.quantity, 0 ),
 		needsShipping: raw.needs_shipping || false,
+		// 'none' (nothing to ship), 'pending' (some package has no rate chosen yet:
+		// total_shipping is 0 then, but not free), 'free' or 'paid'.
+		shippingState: ! raw.needs_shipping ? 'none'
+			: ! raw.shipping_rates?.length || raw.shipping_rates.some( p => ! p.shipping_rates?.some( r => r.selected ) ) ? 'pending'
+			: parseInt( raw.totals?.total_shipping || 0, 10 ) + parseInt( raw.totals?.total_shipping_tax || 0, 10 ) === 0 ? 'free' : 'paid',
 		extensions:    raw.extensions || {},
 		recurringTotals: [],
 	};
