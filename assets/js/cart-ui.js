@@ -45,6 +45,16 @@ function renderMetaRow( row ) {
 // ── Item rendering ──────────────────────────────────────────────
 
 /**
+ * A line's thumbnail: `sizes` lets the browser take the smallest srcset
+ * candidate for the box; width/height reserve the box (square, as the CSS)
+ * before it loads.
+ */
+function renderImage( image, px, sizes ) {
+	const srcset = image.srcset ? ` srcset="${esc( image.srcset )}" sizes="${esc( sizes )}"` : '';
+	return `<img src="${esc( image.src )}"${ srcset } width="${ px }" height="${ px }" alt="${esc( image.alt )}" loading="lazy" decoding="async" />`;
+}
+
+/**
  * One line's markup. `price` defaults to the line total; the checkout lines
  * show the subtotal before coupons. Buttons are type="button": a line may sit
  * inside a form (the classic checkout), where a plain button would submit it.
@@ -53,7 +63,7 @@ export function renderItem( item, price = item.lineTotal ) {
 	if ( item.isChild ) return ''; // Children rendered inside parent.
 
 	const image = item.image
-		? `<a href="${esc( item.permalink )}" class="cart-item-image"><img src="${esc( item.image.src )}" alt="${esc( item.image.alt )}" loading="lazy" /></a>`
+		? `<a href="${esc( item.permalink )}" class="cart-item-image">${ renderImage( item.image, 56, config.imageSizes || '56px' ) }</a>`
 		: '';
 
 	const meta = item.metaRows.length
@@ -105,9 +115,7 @@ export function renderItem( item, price = item.lineTotal ) {
 }
 
 function renderChildItem( child ) {
-	const image = child.image
-		? `<img src="${esc( child.image.src )}" alt="${esc( child.image.alt )}" loading="lazy" />`
-		: '';
+	const image = child.image ? renderImage( child.image, 32, '32px' ) : '';
 
 	return `
 		<div class="cart-item cart-item--child" data-cart-item-key="${esc( child.key )}" role="listitem">

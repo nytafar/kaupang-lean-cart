@@ -154,6 +154,8 @@ class Lean_Cart_Assets {
 				'locale'    => str_replace( '_', '-', get_locale() ),
 			],
 			'showVariationLabels' => apply_filters( 'kaupang/lean-cart/show_variation_labels', false ),
+			// The line thumbnail's `sizes`: its rendered width (a theme that draws it larger sets that here).
+			'imageSizes'   => '56px',
 			'modules'      => array_combine( self::EXTENSIONS, self::extensions() ),
 			'i18n'         => apply_filters( 'kaupang/lean-cart/i18n', [
 				'emptyCart'    => __( 'Handlekurven er tom', 'kaupang-lean-cart' ),

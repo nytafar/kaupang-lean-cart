@@ -6,6 +6,7 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 
 ### Fixed
 - The cart's shipping row no longer reads "Gratis" before a shipping rate is chosen (a new session with no address: the Store API's shipping total is 0 then). It reads "Beregnes i kassen" (new string `shippingPending`) until each package has a selected rate, "Gratis" for a selected rate costing 0, and is left out when nothing ships. Normalized carts carry `shippingState` (`none`, `pending`, `free`, `paid`); the checkout seed carries each rate's `selected`.
+- Cart lines no longer load the original product image: they use the catalog thumbnail with its `srcset`, `sizes` (the config's new `imageSizes`, default `56px`), `width`/`height`, `loading="lazy"` and `decoding="async"`, and the image box keeps its square while it loads. The checkout seed carries the image's `thumbnail` and `srcset`.
 
 ### Changed
 - check.php runs the load budget audit.

@@ -103,6 +103,10 @@ $extra = array_diff( array_keys( $seed['items'][0] ), [ 'key', 'id', 'type', 'na
 if ( $extra || array_keys( $seed['items'][0]['prices'] ) !== [ 'price' ] || count( $seed['items'][0]['images'] ) > 1 ) {
 	$fail( 'A seed line carries more than the store reads: ' . wp_json_encode( $seed['items'][0] ) );
 }
+$image = $seed['items'][0]['images'][0] ?? null;
+if ( $image && ( array_diff( array_keys( $image ), [ 'src', 'thumbnail', 'srcset', 'alt' ] ) || empty( $image['thumbnail'] ) ) ) {
+	$fail( 'A seed image is not the thumbnail, srcset, src and alt the store reads: ' . wp_json_encode( $image ) );
+}
 // The calculated cart has a chosen method, so the drawer can tell a rate from "not calculated yet".
 $rates = array_merge( ...array_column( $seed['shipping_rates'], 'shipping_rates' ) );
 if ( ! $rates || array_diff( array_merge( ...array_map( 'array_keys', $rates ) ), [ 'selected' ] ) || ! in_array( true, array_column( $rates, 'selected' ), true ) ) {

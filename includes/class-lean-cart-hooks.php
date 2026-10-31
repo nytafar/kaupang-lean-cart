@@ -109,7 +109,7 @@ class Lean_Cart_Hooks {
 				$line           = $keep( $item, [ 'key', 'id', 'type', 'name', 'quantity', 'quantity_limits', 'permalink', 'variation', 'item_data', 'extensions' ] );
 				$line['prices'] = $keep( $item['prices'] ?? [], [ 'price' ] );
 				$line['totals'] = $keep( $item['totals'] ?? [], [ 'line_subtotal', 'line_subtotal_tax', 'line_total', 'line_total_tax' ] );
-				$line['images'] = empty( $item['images'] ) ? [] : [ $keep( current( $item['images'] ), [ 'src', 'alt' ] ) ];
+				$line['images'] = empty( $item['images'] ) ? [] : [ $keep( current( $item['images'] ), [ 'src', 'thumbnail', 'srcset', 'alt' ] ) ];
 				return $line;
 			},
 			$cart['items']

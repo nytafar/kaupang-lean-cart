@@ -106,7 +106,8 @@ function normalizeItem( raw ) {
 		id:             raw.id,
 		type:           raw.type || 'simple',
 		title:          name,
-		image:          raw.images?.[0] ? { src: raw.images[0].src, alt: raw.images[0].alt || name } : null,
+		// The catalog thumbnail plus its srcset: never the original upload as the src.
+		image:          raw.images?.[0] ? { src: raw.images[0].thumbnail || raw.images[0].src, srcset: raw.images[0].srcset || '', alt: raw.images[0].alt || name } : null,
 		quantity:       raw.quantity,
 		quantityLimits: raw.quantity_limits || { minimum: 1, maximum: 9999, multiple_of: 1 },
 		unitPrice:      formatPrice( parseInt( raw.prices?.price || 0, 10 ) ),

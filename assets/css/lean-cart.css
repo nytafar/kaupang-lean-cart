@@ -58,6 +58,7 @@
 .lean-cart .cart-item-image img {
 	width: 56px;
 	height: 56px;
+	aspect-ratio: 1; /* holds the box while it loads, also where a theme sets height: auto */
 	object-fit: cover;
 	border-radius: var(--lc-radius);
 	border: 1px solid var(--lc-border);
