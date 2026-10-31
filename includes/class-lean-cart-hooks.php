@@ -95,9 +95,14 @@ class Lean_Cart_Hooks {
 		}
 
 		// What normalizeCart(), normalizeItem() and the extension modules read; not
-		// addresses, shipping rates, payment methods, cross-sells or descriptions.
+		// addresses, payment methods, cross-sells or descriptions, and of the shipping
+		// rates only whether each package has one selected.
 		$keep = static fn( $data, array $keys ) => array_intersect_key( (array) $data, array_flip( $keys ) );
 		$seed = $keep( $cart, [ 'items', 'coupons', 'totals', 'needs_shipping', 'extensions' ] );
+		$seed['shipping_rates'] = array_map(
+			static fn( $package ) => [ 'shipping_rates' => array_map( static fn( $rate ) => $keep( $rate, [ 'selected' ] ), (array) ( ( (array) $package )['shipping_rates'] ?? [] ) ) ],
+			(array) ( $cart['shipping_rates'] ?? [] )
+		);
 		$seed['totals'] = $keep( $cart['totals'] ?? [], [ 'total_items', 'total_items_tax', 'total_price', 'total_tax', 'total_shipping', 'total_shipping_tax' ] );
 		$seed['items']  = array_map(
 			static function ( $item ) use ( $keep ) {

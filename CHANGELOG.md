@@ -4,6 +4,9 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+- The cart's shipping row no longer reads "Gratis" before a shipping rate is chosen (a new session with no address: the Store API's shipping total is 0 then). It reads "Beregnes i kassen" (new string `shippingPending`) until each package has a selected rate, "Gratis" for a selected rate costing 0, and is left out when nothing ships. Normalized carts carry `shippingState` (`none`, `pending`, `free`, `paid`); the checkout seed carries each rate's `selected`.
+
 ### Changed
 - check.php runs the load budget audit.
 - The cart's JS loads as WordPress core script modules (`@kaupang/lean-cart/<name>`). Core prints the page's one import map, so pages with Interactivity blocks (the FAQ accordion) no longer carry two maps, and it preloads the static imports (`config`, `api`, `store`, `ui`, `add`), so the three-level import chain becomes one round. Extension and classic-page modules are dynamic imports (preloaded on the shortcode checkout, as before). Each file is versioned with its own modification time.

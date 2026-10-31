@@ -96,12 +96,17 @@ if ( ! $seed || count( $seed['items'] ) !== 2 ) {
 $lines = count( $seed['items'] );
 $keys = array_keys( $seed );
 sort( $keys );
-if ( [ 'coupons', 'extensions', 'items', 'needs_shipping', 'totals' ] !== $keys ) {
+if ( [ 'coupons', 'extensions', 'items', 'needs_shipping', 'shipping_rates', 'totals' ] !== $keys ) {
 	$fail( 'The seed carries more than the store reads: ' . implode( ', ', $keys ) );
 }
 $extra = array_diff( array_keys( $seed['items'][0] ), [ 'key', 'id', 'type', 'name', 'quantity', 'quantity_limits', 'permalink', 'variation', 'item_data', 'extensions', 'prices', 'totals', 'images' ] );
 if ( $extra || array_keys( $seed['items'][0]['prices'] ) !== [ 'price' ] || count( $seed['items'][0]['images'] ) > 1 ) {
 	$fail( 'A seed line carries more than the store reads: ' . wp_json_encode( $seed['items'][0] ) );
+}
+// The calculated cart has a chosen method, so the drawer can tell a rate from "not calculated yet".
+$rates = array_merge( ...array_column( $seed['shipping_rates'], 'shipping_rates' ) );
+if ( ! $rates || array_diff( array_merge( ...array_map( 'array_keys', $rates ) ), [ 'selected' ] ) || ! in_array( true, array_column( $rates, 'selected' ), true ) ) {
+	$fail( 'The seed\'s shipping rates are not only `selected`, with one selected: ' . wp_json_encode( $seed['shipping_rates'] ) );
 }
 
 // 3. The route throws an \Error (not an \Exception, which WooCommerce catches).

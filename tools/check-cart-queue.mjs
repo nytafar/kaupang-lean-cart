@@ -1576,6 +1576,38 @@ await scenario( 'markup: product text is escaped for attributes too', async () =
 	ok( ! html.includes( 'onfocus="' ) && ! html.includes( 'p"q' ), 'a name or URL with a quote cannot add an attribute' );
 } );
 
+await scenario( 'drawer: the shipping row tells "not calculated yet" from free', async () => {
+	const config = window.leanCartConfig;
+	window.leanCartConfig = { ...config, i18n: { shipping: 'Frakt', freeShipping: 'Gratis', shippingPending: 'Beregnes i kassen' } };
+	try {
+		await freshStore();
+		const totals = { innerHTML: '' };
+		const items = fakeList();
+		items.parentElement = { querySelector: () => null };
+		document.querySelectorAll = ( sel ) => sel === '[data-lean-cart="totals"]' ? [ totals ] : sel === '[data-lean-cart="items"]' ? [ items ] : [];
+		const ui = await import( pathToFileURL( path.join( jsDir, 'cart-ui.js' ) ).href + '?run=' + run );
+		ui.init();
+		const line = { key: 'a', id: 1, name: 'Te', quantity: 1, prices: { price: '100' }, totals: {} };
+		const rates = ( ...selected ) => [ { shipping_rates: selected.map( s => ( { selected: s } ) ) } ];
+		const cases = [
+			[ 'a new session (no rates yet)', { needs_shipping: true, shipping_rates: [], totals: { total_shipping: '0' } }, 'Beregnes i kassen' ],
+			[ 'rates, none selected', { needs_shipping: true, shipping_rates: rates( false, false ), totals: { total_shipping: '0' } }, 'Beregnes i kassen' ],
+			[ 'one package of two with no rate selected', { needs_shipping: true, shipping_rates: [ ...rates( true ), ...rates( false ) ], totals: { total_shipping: '0' } }, 'Beregnes i kassen' ],
+			[ 'a selected free rate', { needs_shipping: true, shipping_rates: rates( false, true ), totals: { total_shipping: '0', total_shipping_tax: '0' } }, 'Gratis' ],
+			[ 'a selected paid rate', { needs_shipping: true, shipping_rates: rates( true ), totals: { total_shipping: '5520', total_shipping_tax: '1380' } }, '69' ],
+			[ 'nothing to ship', { needs_shipping: false, totals: {} }, null ],
+		];
+		for ( const [ label, raw, want ] of cases ) {
+			// A store of its own on the same bus: its seed publishes the cart to the UI.
+			( await freshStore( { sameBus: true } ) ).store.seed( { items: [ line ], ...raw } );
+			const row = totals.innerHTML.match( /Frakt<\/span>\s*<span class="totals-value[^"]*">([^<]*)</ );
+			ok( want === null ? ! totals.innerHTML.includes( 'Frakt' ) && totals.innerHTML.includes( 'totals-row' ) : !! row?.[ 1 ].includes( want ), `${ label }: shipping ${ want === null ? 'row left out' : `reads "${ want }"` } (got ${ row ? `"${ row[ 1 ] }"` : 'no row' })` );
+		}
+	} finally {
+		window.leanCartConfig = config;
+	}
+} );
+
 await scenario( 'drawer: focus stays on the control used across a repaint; an error shows only where focus is', async () => {
 	await freshStore();
 	const items = fakeList();

@@ -190,17 +190,21 @@ function renderRecurringTotals( recurringTotals = [] ) {
 
 function renderTotals( state ) {
 	const totals = state.totals;
-	const freeShipping = totals.shippingRaw === 0;
+	const shipping = {
+		free:    `<span class="totals-value totals-value--free">${esc( i18n.freeShipping )}</span>`,
+		pending: `<span class="totals-value totals-value--pending">${esc( i18n.shippingPending )}</span>`,
+		paid:    `<span class="totals-value">${esc( totals.shipping )}</span>`,
+	}[ state.shippingState ];
 
 	return `
 		<div class="totals-row">
 			<span class="totals-label">${esc( i18n.subtotal )}</span>
 			<span class="totals-value">${esc( totals.subtotal )}</span>
 		</div>
-		<div class="totals-row">
+		${ shipping ? `<div class="totals-row">
 			<span class="totals-label">${esc( i18n.shipping )}</span>
-			<span class="totals-value${ freeShipping ? ' totals-value--free' : '' }">${ freeShipping ? esc( i18n.freeShipping ) : esc( totals.shipping ) }</span>
-		</div>
+			${ shipping }
+		</div>` : '' }
 		<div class="totals-divider"></div>
 		<div class="totals-row totals-row--total">
 			<span class="totals-label">${esc( i18n.total )}</span>

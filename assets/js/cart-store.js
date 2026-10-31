@@ -152,6 +152,11 @@ function normalizeCart( raw ) {
 		},
 		itemCount:     ( raw.items || [] ).reduce( ( sum, i ) => sum + i.quantity, 0 ),
 		needsShipping: raw.needs_shipping || false,
+		// 'none' (nothing to ship), 'pending' (some package has no rate chosen yet:
+		// total_shipping is 0 then, but not free), 'free' or 'paid'.
+		shippingState: ! raw.needs_shipping ? 'none'
+			: ! raw.shipping_rates?.length || raw.shipping_rates.some( p => ! p.shipping_rates?.some( r => r.selected ) ) ? 'pending'
+			: parseInt( raw.totals?.total_shipping || 0, 10 ) + parseInt( raw.totals?.total_shipping_tax || 0, 10 ) === 0 ? 'free' : 'paid',
 		extensions:    raw.extensions || {},
 		recurringTotals: [],
 	};

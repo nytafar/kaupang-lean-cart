@@ -164,6 +164,8 @@ class Lean_Cart_Assets {
 				'total'        => __( 'Totalt', 'kaupang-lean-cart' ),
 				'shipping'     => __( 'Frakt', 'kaupang-lean-cart' ),
 				'freeShipping' => __( 'Gratis', 'kaupang-lean-cart' ),
+				/* translators: shipping row before a shipping rate is chosen (no address yet) */
+				'shippingPending' => __( 'Beregnes i kassen', 'kaupang-lean-cart' ),
 				'updateError'  => __( 'Kunne ikke oppdatere', 'kaupang-lean-cart' ),
 				/* translators: the classic checkout's order lines (screen reader name) */
 				'checkoutLines' => __( 'Varer i bestillingen', 'kaupang-lean-cart' ),
