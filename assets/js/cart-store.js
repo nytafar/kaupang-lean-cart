@@ -134,6 +134,7 @@ function normalizeItem( raw ) {
 		subscriptionSummary: null,
 		subscriptionNote: null,
 		planChoice:     null,
+		busy:           false, // an extension update of this line is in flight (updateExtension())
 		metaRows:       [
 			...( raw.variation || [] ).map( v => ({ key: v.attribute, value: v.value, type: 'text' }) ),
 			...( raw.item_data || [] ).map( d => ({ key: d.name, value: d.display || d.value, type: 'text' }) ),
@@ -483,7 +484,7 @@ export async function addItem( payload, { trigger = null, openDrawer = true } = 
  * Uses debounced API calls per item key.
  */
 export async function changeQuantity( key, delta ) {
-	if ( ! state ) return;
+	if ( ! state || updating.has( key ) ) return;
 
 	// Find the item and compute the step within its limits.
 	const item = state.items.find( i => i.key === key );
@@ -499,7 +500,7 @@ export async function changeQuantity( key, delta ) {
  * Remove an item from the cart.
  */
 export async function removeItem( key, { trigger = null } = {} ) {
-	if ( ! state ) return;
+	if ( ! state || updating.has( key ) ) return;
 
 	// The line is going; a quantity change still waiting for it would only fail.
 	cancelDebounce( key );
@@ -560,14 +561,18 @@ export async function removeCoupon( code ) {
  * @param {object} options   - { key, trigger }.
  */
 export async function updateExtension( namespace, data, { key = null, trigger = null } = {} ) {
+	if ( key && updating.has( key ) ) return;
 	if ( key ) flushDebounce( key );
 	const id = ++lastId;
 	setLoading( trigger, true );
 
 	if ( key ) {
+		updating.add( key );
 		pending.set( id, ( draft ) => {
 			const item = draft.items.find( i => i.key === key );
-			if ( item ) item.lineTotal = item.lineSubtotal = '...'; // Will be replaced by server response.
+			if ( ! item ) return;
+			item.busy = true;
+			item.lineTotal = item.lineSubtotal = '...'; // Will be replaced by server response.
 		} );
 		publish();
 	}
@@ -577,9 +582,18 @@ export async function updateExtension( namespace, data, { key = null, trigger = 
 	} catch ( err ) {
 		emit( 'lean-cart:error', err );
 	} finally {
+		updating.delete( key );
 		setLoading( trigger, false );
 	}
 }
+
+/**
+ * Lines with an extension update in flight. The update may re-key the line
+ * (a plan switch), and a change sent after it with the old key would miss it,
+ * so until the answer lands the store ignores quantity changes, removals and
+ * further updates of that line; the line renders as busy (`item.busy`).
+ */
+const updating = new Set();
 
 // ── Helpers ─────────────────────────────────────────────────────
 

@@ -134,6 +134,11 @@
 	font-style: italic;
 }
 
+.lean-cart .cart-item[aria-busy="true"] :is(button, select) {
+	opacity: 0.5;
+	cursor: progress;
+}
+
 .lean-cart .cart-item-subscription-note {
 	font-size: 11px;
 	color: var(--lc-text-muted);

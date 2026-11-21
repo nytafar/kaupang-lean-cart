@@ -131,7 +131,13 @@ document.addEventListener( 'click', ( e ) => {
 document.addEventListener( 'change', ( e ) => {
 	const select = e.target.closest?.( 'select[data-cart-action="plan"]' );
 	const key = select?.closest( '[data-cart-item-key]' )?.dataset.cartItemKey;
-	const option = key && store.getState()?.items.find( i => i.key === key )?.planChoice?.options?.[ Number( select.value ) ];
+	const item = key && store.getState()?.items.find( i => i.key === key );
+	if ( item?.busy ) {
+		// A switch of this line is in flight: put the choice back, send nothing.
+		select.value = String( Math.max( 0, item.planChoice.options.findIndex( o => o.selected ) ) );
+		return;
+	}
+	const option = item?.planChoice?.options?.[ Number( select.value ) ];
 	if ( option?.update && ! option.selected ) {
 		store.updateExtension( option.update.namespace, option.update.data, { key, trigger: select } );
 	}

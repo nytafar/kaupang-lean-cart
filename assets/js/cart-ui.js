@@ -95,9 +95,12 @@ export function renderItem( item, price = item.lineTotal ) {
 	const { minimum, maximum } = item.quantityLimits;
 	const canDecrease = item.quantity > ( minimum || 1 );
 	const canIncrease = item.quantity < ( maximum || 9999 );
+	// While an update of the line is in flight its controls do nothing (the store ignores them):
+	// aria-disabled, not disabled, so the control that has focus keeps it.
+	const busy = item.busy ? ' aria-disabled="true"' : '';
 
 	return `
-		<div class="cart-item${ item.children.length ? ' cart-item--container' : '' }" data-cart-item-key="${esc( item.key )}" role="listitem">
+		<div class="cart-item${ item.children.length ? ' cart-item--container' : '' }" data-cart-item-key="${esc( item.key )}" role="listitem"${ item.busy ? ' aria-busy="true"' : '' }>
 			${ image }
 			<div class="cart-item-details">
 				<a href="${esc( item.permalink )}" class="cart-item-title">${esc( item.title )}</a>
@@ -109,12 +112,12 @@ export function renderItem( item, price = item.lineTotal ) {
 			</div>
 			<div class="cart-item-actions">
 				<div class="quantity-control">
-					<button type="button" data-cart-action="decrease" aria-label="${esc( `Reduser antall ${ item.title }` ) }"${ canDecrease ? '' : ' disabled' }>&minus;</button>
+					<button type="button" data-cart-action="decrease" aria-label="${esc( `Reduser antall ${ item.title }` ) }"${ canDecrease ? busy : ' disabled' }>&minus;</button>
 					<span data-cart-quantity aria-label="Antall">${ item.quantity }</span>
-					<button type="button" data-cart-action="increase" aria-label="${esc( `Øk antall ${ item.title }` ) }"${ canIncrease ? '' : ' disabled' }>&plus;</button>
+					<button type="button" data-cart-action="increase" aria-label="${esc( `Øk antall ${ item.title }` ) }"${ canIncrease ? busy : ' disabled' }>&plus;</button>
 				</div>
 				<span class="cart-item-price">${esc( price ) }</span>
-				<button type="button" class="cart-item-remove" data-cart-action="remove" aria-label="${esc( i18n.remove + ' ' + item.title ) }">
+				<button type="button" class="cart-item-remove" data-cart-action="remove" aria-label="${esc( i18n.remove + ' ' + item.title ) }"${ busy }>
 					${ removeIcon }
 				</button>
 			</div>
@@ -134,7 +137,7 @@ function renderPlanChoice( item ) {
 	const options = choice.options.map( ( o, i ) =>
 		`<option value="${ i }"${ o.selected ? ' selected' : '' }>${esc( o.price ? `${ o.label } · ${ o.price }` : o.label )}</option>`
 	).join( '' );
-	return `<select class="cart-item-plan" data-cart-action="plan" aria-label="${esc( `${ choice.label || '' } ${ item.title }`.trim() )}">${ options }</select>`;
+	return `<select class="cart-item-plan" data-cart-action="plan" aria-label="${esc( `${ choice.label || '' } ${ item.title }`.trim() )}"${ item.busy ? ' aria-disabled="true"' : '' }>${ options }</select>`;
 }
 
 function renderChildItem( child ) {
