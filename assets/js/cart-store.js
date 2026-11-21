@@ -12,19 +12,24 @@ import config from '@kaupang/lean-cart/config';
 
 // ── Currency formatter ──────────────────────────────────────────
 
-// Whole amounts stay short ("179 kr"); any other shows every decimal ("178,20 kr"), as WooCommerce does.
-const formatter = ( digits ) => new Intl.NumberFormat( config.currency.locale, {
-	style: 'currency',
-	currency: config.currency.code,
-	minimumFractionDigits: digits,
-	maximumFractionDigits: digits,
-} );
-const whole = formatter( 0 );
-const exact = formatter( config.currency.minorUnit );
-
+/**
+ * An amount in the currency's minor units (as the Store API gives it), printed
+ * the way wc_price() prints it: the store's format around the number ("kr 327"),
+ * its separators and decimals, and whole amounts short only where the store
+ * trims zeros (`woocommerce_price_trim_zeros`). PHP passes wc_price()'s inputs
+ * as config.currency (Lean_Cart_Assets::price_format()). Integer arithmetic, so
+ * no amount picks up a float's rounding.
+ */
 export function formatPrice( minorUnitValue ) {
-	const divisor = Math.pow( 10, config.currency.minorUnit );
-	return ( minorUnitValue % divisor ? exact : whole ).format( minorUnitValue / divisor );
+	const { minorUnit = 2, decimals = minorUnit, decimalSeparator = '.', thousandSeparator = '', prefix = '', suffix = '', trimZeros = false } = config.currency || {};
+	const minor = Math.round( Number( minorUnitValue ) || 0 );
+	const shift = decimals - minorUnit;
+	const units = shift >= 0 ? Math.abs( minor ) * 10 ** shift : Math.round( Math.abs( minor ) / 10 ** -shift );
+	const digits = String( units ).padStart( decimals + 1, '0' );
+	const whole = digits.slice( 0, digits.length - decimals ).replace( /\B(?=(\d{3})+$)/g, thousandSeparator );
+	const fraction = decimals > 0 ? digits.slice( -decimals ) : '';
+	const number = fraction && ! ( trimZeros && /^0+$/.test( fraction ) ) ? whole + decimalSeparator + fraction : whole;
+	return ( minor < 0 ? '-' : '' ) + prefix + number + suffix;
 }
 
 // ── Form extractor pipeline ─────────────────────────────────────

@@ -26,7 +26,8 @@ globalThis.window = globalThis;
 window.leanCartConfig = {
 	storeApiBase: 'https://shop.test/wp-json/wc/store/v1/',
 	nonce: 'n',
-	currency: { locale: 'nb-NO', code: 'NOK', minorUnit: 2 },
+	// staging.myrvann.no's (Lean_Cart_Assets::price_format()): left_space, trim zeros on.
+	currency: { code: 'NOK', symbol: 'kr', minorUnit: 2, decimals: 2, decimalSeparator: ',', thousandSeparator: ' ', prefix: 'kr\u00a0', suffix: '', trimZeros: true },
 	i18n: {},
 };
 
@@ -1325,7 +1326,7 @@ await scenario( 'checkout lines: shown once painted, totals marked updating on a
 	ok( ( list.innerHTML.match( /type="button"/g ) || [] ).length === 3 && ! /<button(?![^>]*type="button")/.test( list.innerHTML ), 'every button is type="button" (the lines sit inside form.checkout)' );
 	ok( ( list.innerHTML.match( /data-cart-action=/g ) || [] ).length === 3 && /cart-item--child" data-cart-item-key="c1"/.test( list.innerHTML ), 'the box contents are listed under the box, without controls of their own' );
 	const price = list.innerHTML.match( /class="cart-item-price">([^<]*)</ )?.[ 1 ];
-	ok( price === '178,20\u00a0kr', `the line shows its subtotal before coupons with both decimals, "178,20 kr" (got "${ price }")` );
+	ok( price === 'kr\u00a0178,20', `the line shows its subtotal before coupons with both decimals, "kr 178,20" (got "${ price }")` );
 	const before = triggers.filter( t => t === 'update_checkout' ).length;
 	const blocked = blocks.length;
 	// The shopper presses + on the box in the summary.
@@ -1395,10 +1396,23 @@ function mountLines( list, status = { textContent: '' } ) {
 	} };
 }
 
-await scenario( 'prices: whole amounts short, others with both decimals', async () => {
+await scenario( 'prices: as wc_price() prints them, from the store\'s format', async () => {
 	const { store } = await freshStore();
-	const got = [ 17900, 17820, 181320, 0, 5 ].map( store.formatPrice );
-	ok( JSON.stringify( got ) === JSON.stringify( [ '179 kr', '178,20 kr', '1 813,20 kr', '0 kr', '0,05 kr' ] ), `179 kr, 178,20 kr, 1 813,20 kr, 0 kr, 0,05 kr (got ${ got.join( ' | ' ) })` );
+	const same = ( got, want, label ) => ok( JSON.stringify( got ) === JSON.stringify( want ), `${ label } (got ${ got.join( ' | ' ) })` );
+	// What wc_price() printed on staging.myrvann.no for 327, 178.2, 1813.2, 0, -50, 0.05 (WooCommerce 11.3).
+	same( [ 32700, 17820, 181320, 0, -5000, 5 ].map( store.formatPrice ), [ 'kr\u00a0327', 'kr\u00a0178,20', 'kr\u00a01 813,20', 'kr\u00a00', '-kr\u00a050', 'kr\u00a00,05' ], 'staging: kr 327, kr 178,20, kr 1 813,20, kr 0, -kr 50, kr 0,05' );
+	same( [ '32700', 1234567890 ].map( store.formatPrice ), [ 'kr\u00a0327', 'kr\u00a012 345 678,90' ], 'a numeric string, and every thousand grouped' );
+	const was = window.leanCartConfig.currency;
+	try {
+		// A store that keeps its zeros, with the symbol after the number (right_space) and other separators.
+		window.leanCartConfig.currency = { minorUnit: 2, decimals: 2, decimalSeparator: '.', thousandSeparator: ',', prefix: '', suffix: '\u00a0kr', trimZeros: false };
+		same( [ 32700, 181320 ].map( store.formatPrice ), [ '327.00\u00a0kr', '1,813.20\u00a0kr' ], 'no trim: 327.00 kr, 1,813.20 kr' );
+		// wc_price_args showing fewer decimals than the Store API's minor unit: rounded half up, as number_format().
+		window.leanCartConfig.currency = { minorUnit: 2, decimals: 0, decimalSeparator: ',', thousandSeparator: ' ', prefix: 'kr ', suffix: '', trimZeros: false };
+		same( [ 17850, 17849 ].map( store.formatPrice ), [ 'kr 179', 'kr 178' ], 'decimals 0: kr 179, kr 178' );
+	} finally {
+		window.leanCartConfig.currency = was;
+	}
 } );
 
 await scenario( 'checkout lines: focus after a repaint stays on the control used, and is never taken from outside the list', async () => {

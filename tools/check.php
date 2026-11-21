@@ -79,6 +79,41 @@ $ok( isset( $config['storeApiBase'], $config['nonce'], $config['i18n'], $config[
 $ok( ! empty( $config['drawerCss'] ) && str_contains( $config['drawerCss'], 'lean-cart.css?ver=' ), 'drawer CSS is left to the first interaction (drawerCss set)' );
 $ok( ! in_array( 'kaupang-lean-cart-styles', wp_styles()->queue, true ), 'no stylesheet in <head>' );
 
+// ── Prices: the config carries what wc_price() prints ───────────
+// formatPrice() (cart-store.js) puts prefix + number + suffix together as below;
+// tools/check-cart-queue.mjs proves the JS against staging's wc_price() output.
+$as_config = static function ( array $c, int $minor ): string {
+	$n = number_format( abs( $minor ) / 10 ** $c['minorUnit'], $c['decimals'], $c['decimalSeparator'], $c['thousandSeparator'] );
+	if ( $c['trimZeros'] && $c['decimals'] > 0 ) {
+		$n = preg_replace( '/' . preg_quote( $c['decimalSeparator'], '/' ) . '0++$/', '', $n );
+	}
+	return ( $minor < 0 ? '-' : '' ) . $c['prefix'] . $n . $c['suffix'];
+};
+$wc_says = static fn( int $minor ): string => html_entity_decode( wp_strip_all_tags( wc_price( $minor / 10 ** wc_get_price_decimals() ) ), ENT_QUOTES, 'UTF-8' );
+$prices  = static function ( string $label ) use ( $render, $data, $as_config, $wc_says, $ok ): void {
+	$c = $data( $render() )['currency'] ?? [];
+	$ok( isset( $c['minorUnit'], $c['decimals'], $c['decimalSeparator'], $c['thousandSeparator'], $c['prefix'], $c['suffix'], $c['trimZeros'] ), "{$label}: config.currency has wc_price()'s inputs" );
+	if ( ! isset( $c['prefix'] ) ) {
+		return;
+	}
+	$amounts = [ 32700, 17820, 181320, 0, -5000, 5, 123456789 ];
+	$got     = array_map( static fn( $m ) => $as_config( $c, $m ), $amounts );
+	$want    = array_map( $wc_says, $amounts );
+	$ok( $got === $want, "{$label}: reads as wc_price() (" . implode( ' | ', $want ) . ( $got === $want ? '' : '; got ' . implode( ' | ', $got ) ) . ')' );
+};
+$prices( 'this store' );
+// Another store's settings: the symbol after the number, zeros kept, other separators.
+$other = static fn( $v, $o ) => [ 'woocommerce_currency_pos' => 'right_space', 'woocommerce_price_decimal_sep' => '.', 'woocommerce_price_thousand_sep' => ',' ][ $o ] ?? $v;
+foreach ( [ 'woocommerce_currency_pos', 'woocommerce_price_decimal_sep', 'woocommerce_price_thousand_sep' ] as $opt ) {
+	add_filter( "option_{$opt}", $other, 99, 2 );
+}
+add_filter( 'woocommerce_price_trim_zeros', '__return_false', 99 );
+$prices( 'right_space, no trim' );
+remove_filter( 'woocommerce_price_trim_zeros', '__return_false', 99 );
+foreach ( [ 'woocommerce_currency_pos', 'woocommerce_price_decimal_sep', 'woocommerce_price_thousand_sep' ] as $opt ) {
+	remove_filter( "option_{$opt}", $other, 99 );
+}
+
 // ── The shortcode checkout: the lines show with the page ────────
 add_filter( 'woocommerce_is_checkout', '__return_true' );
 $html = $render();

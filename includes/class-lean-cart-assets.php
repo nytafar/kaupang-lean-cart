@@ -139,20 +139,49 @@ class Lean_Cart_Assets {
 		return $data + $config;
 	}
 
-	private function build_config(): array {
-		$wc_price_format = get_woocommerce_price_format();
+	/**
+	 * How WooCommerce prints an amount: wc_price()'s own inputs (its `wc_price_args`
+	 * filter, the store's currency position and separators, `woocommerce_price_trim_zeros`),
+	 * so the cart's amounts read as WooCommerce's totals rows do ("kr 327", "kr 1 813,20").
+	 * `minorUnit` is what the Store API's integer amounts are in; `decimals` is what is shown.
+	 * Not covered: the `raw_woocommerce_price` and `formatted_woocommerce_price` filters,
+	 * which act on the number itself.
+	 */
+	private static function price_format(): array {
+		$args   = apply_filters( 'wc_price_args', [
+			'ex_tax_label'       => false,
+			'currency'           => '',
+			'decimal_separator'  => wc_get_price_decimal_separator(),
+			'thousand_separator' => wc_get_price_thousand_separator(),
+			'decimals'           => wc_get_price_decimals(),
+			'price_format'       => get_woocommerce_price_format(),
+			'in_span'            => true,
+			'aria-hidden'        => false,
+		] );
+		$symbol = get_woocommerce_currency_symbol( $args['currency'] );
+		// The format around the number: "%1$s&nbsp;%2$s" is the prefix "kr" + a no-break space.
+		[ $prefix, $suffix ] = array_pad( explode( "\0", sprintf( $args['price_format'], $symbol, "\0" ), 2 ), 2, '' );
 
+		return [
+			'code'              => $args['currency'] ?: get_woocommerce_currency(),
+			'symbol'            => html_entity_decode( $symbol, ENT_QUOTES, 'UTF-8' ),
+			'minorUnit'         => wc_get_price_decimals(),
+			'decimals'          => (int) $args['decimals'],
+			'decimalSeparator'  => html_entity_decode( (string) $args['decimal_separator'], ENT_QUOTES, 'UTF-8' ),
+			'thousandSeparator' => html_entity_decode( (string) $args['thousand_separator'], ENT_QUOTES, 'UTF-8' ),
+			'prefix'            => html_entity_decode( $prefix, ENT_QUOTES, 'UTF-8' ),
+			'suffix'            => html_entity_decode( $suffix, ENT_QUOTES, 'UTF-8' ),
+			'trimZeros'         => (bool) apply_filters( 'woocommerce_price_trim_zeros', false ),
+		];
+	}
+
+	private function build_config(): array {
 		$config = [
 			'storeApiBase' => esc_url_raw( rest_url( 'wc/store/v1/' ) ),
 			'nonce'        => wp_create_nonce( 'wc_store_api' ),
 			'checkoutUrl'  => wc_get_checkout_url(),
 			'cartUrl'      => wc_get_cart_url(),
-			'currency'     => [
-				'code'      => get_woocommerce_currency(),
-				'symbol'    => html_entity_decode( get_woocommerce_currency_symbol() ),
-				'minorUnit' => wc_get_price_decimals(),
-				'locale'    => str_replace( '_', '-', get_locale() ),
-			],
+			'currency'     => self::price_format(),
 			'showVariationLabels' => apply_filters( 'kaupang/lean-cart/show_variation_labels', false ),
 			// The line thumbnail's `sizes`: its rendered width (a theme that draws it larger sets that here).
 			'imageSizes'   => '56px',

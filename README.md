@@ -81,6 +81,8 @@ Lean Cart doesn't render a drawer, panel, or page. It hydrates mount points your
 
 The totals mount's shipping row follows the cart's shipping state (`state.shippingState`): `pending` while a package has no rate selected, as in a new session before the shopper has given an address (`i18n.shippingPending`, "Beregnes i kassen"; the total excludes shipping then), `free` for a selected rate costing 0 (`i18n.freeShipping`, "Gratis"), `paid` for the shipping total, and no row at all when nothing in the cart ships (`none`).
 
+Amounts read as WooCommerce prints them (`kr 327`, `kr 1 813,20`): `formatPrice()` in `cart-store.js` (also `window.leanCart.store.formatPrice`) takes an amount in minor units, as the Store API gives it, and follows `config.currency`, which carries `wc_price()`'s own inputs (its `wc_price_args` filter, the currency position and separators, `woocommerce_price_trim_zeros`). The `raw_woocommerce_price` and `formatted_woocommerce_price` filters, which change the number itself, are not followed.
+
 Line images are the catalog thumbnail with its `srcset`, `width`/`height` 56 and `loading="lazy"`, never the original upload. `sizes` is the config's `imageSizes` (`56px`, the stylesheet's box); a theme that draws the box larger sets it, e.g. `add_filter( 'kaupang/lean-cart/config', fn( $c ) => [ 'imageSizes' => '70px' ] + $c );`.
 
 The plugin emits a `lean-cart:open` event when an item is added. If your theme exposes `window.numenu`, it bridges automatically. Otherwise, listen to the event directly:
