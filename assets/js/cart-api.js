@@ -172,3 +172,15 @@ export function removeCoupon( { code } ) {
 		body: { code },
 	} );
 }
+
+/**
+ * A Store API extension's update callback (POST cart/extensions): what a
+ * plugin registered with woocommerce_store_api_register_update_callback().
+ * Answers the cart, recalculated.
+ */
+export function updateExtension( { namespace, data } ) {
+	return request( 'cart/extensions', {
+		method: 'POST',
+		body: { namespace, data },
+	} );
+}

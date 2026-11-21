@@ -63,7 +63,15 @@ export function init( store, $, { renderItem, paintLines, i18n } ) {
 		}
 		const btn = e.target.closest( '[data-cart-action]' );
 		const row = btn?.closest( '[data-cart-item-key]' );
-		if ( row ) asked = { key: row.dataset.cartItemKey, action: btn.dataset.cartAction, title: row.querySelector( '.cart-item-title' )?.textContent || '' };
+		// A plan choice says itself (the select shows it), and may re-key the line: not announced.
+		if ( row && btn.dataset.cartAction !== 'plan' ) asked = { key: row.dataset.cartItemKey, action: btn.dataset.cartAction, title: row.querySelector( '.cart-item-title' )?.textContent || '' };
+	} );
+
+	// A plan choice while the order is being placed: put it back, and send nothing (cart-init listens on document).
+	list.addEventListener( 'change', ( e ) => {
+		if ( ! form?.classList.contains( 'processing' ) || e.target.dataset?.cartAction !== 'plan' ) return;
+		e.stopPropagation();
+		e.target.value = String( Math.max( 0, [ ...e.target.options ].findIndex( o => o.defaultSelected ) ) );
 	} );
 
 	document.addEventListener( 'lean-cart:updated', ( e ) => {

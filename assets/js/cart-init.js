@@ -127,6 +127,16 @@ document.addEventListener( 'click', ( e ) => {
 	}
 } );
 
+// A line's plan choice: send the chosen option's extension update (item.planChoice).
+document.addEventListener( 'change', ( e ) => {
+	const select = e.target.closest?.( 'select[data-cart-action="plan"]' );
+	const key = select?.closest( '[data-cart-item-key]' )?.dataset.cartItemKey;
+	const option = key && store.getState()?.items.find( i => i.key === key )?.planChoice?.options?.[ Number( select.value ) ];
+	if ( option?.update && ! option.selected ) {
+		store.updateExtension( option.update.namespace, option.update.data, { key, trigger: select } );
+	}
+} );
+
 // Checkout links: leaving the page drops queued cart writes, so wait until
 // they have landed (8 s at most) before navigating.
 document.addEventListener( 'click', ( e ) => {
@@ -192,6 +202,10 @@ if ( config.modules.allProductsSubs ) {
 
 if ( config.modules.subliumSubscriptions ) {
 	extensions.push( import( '@kaupang/lean-cart/sublium-subscriptions' ).then( m => m.init( store ) ) );
+}
+
+if ( config.modules.kaupangSubscriptions ) {
+	extensions.push( import( '@kaupang/lean-cart/kaupang-subscriptions' ).then( m => m.init( store ) ) );
 }
 
 // WooCommerce's classic cart page and shortcode checkout run their own jQuery

@@ -134,6 +134,24 @@
 	font-style: italic;
 }
 
+.lean-cart .cart-item-subscription-note {
+	font-size: 11px;
+	color: var(--lc-text-muted);
+}
+
+.lean-cart .cart-item-plan {
+	align-self: flex-start;
+	max-width: 100%;
+	margin-top: 2px;
+	font: inherit;
+	font-size: 12px;
+	color: var(--lc-text);
+	background: transparent;
+	border: 1px solid var(--lc-border);
+	border-radius: var(--lc-radius);
+	padding: 2px 4px;
+}
+
 /* ── Badges ────────────────────────────────────────────────────── */
 
 .lean-cart .cart-item-badges {

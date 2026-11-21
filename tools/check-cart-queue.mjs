@@ -57,7 +57,13 @@ setLocks( undefined );
 
 // ── Fake Store API with WooCommerce's read-modify-write session ─────────────
 //
-// Lines: { key, id, quantity, children?: [ { key, id, quantity } ] } (children = a Mix-and-Match box).
+// Lines: { key, id, quantity, children?: [ { key, id, quantity } ] } (children = a Mix-and-Match box);
+// plan: true makes it a kaupang-subscriptions plan product, on `rhythm` (absent or '0' = one-time),
+// joining the customer's package with `every` when that is set.
+const PLAN_OPTIONS = [ 'week-2', 'week-4' ].map( key => ( { key, unit: 'week', count: Number( key.slice( 5 ) ), label: `Hver ${ key.slice( 5 ) }. uke`, discount_pct: 10, price: 17820, list_price: 19800 } ) );
+const planData = ( line ) => line.rhythm && line.rhythm !== '0'
+	? { recurring: true, rhythm: line.rhythm, label: `Hver ${ line.rhythm.slice( 5 ) }. uke`, discount_pct: 10, one_time_price: 19800, options: PLAN_OPTIONS, into_package: !! line.every, every: line.every || 1 }
+	: { recurring: false, one_time_price: 19800, options: PLAN_OPTIONS };
 // Options per request (route, body, srv): latency → ms, fail → HTTP status (409 replies with the cart),
 // hang → never answer until aborted, netError → fetch rejects like a dropped connection.
 
@@ -66,7 +72,7 @@ function fakeServer( items, { latency = () => 50, fail = () => null, hang = () =
 	const raw = ( cart, coupons ) => ( {
 		items: cart.flatMap( i => [
 			{ key: i.key, id: i.id, name: i.key, quantity: i.quantity, prices: { price: '100' }, totals: i.totals || {},
-				extensions: i.children ? { mix_and_match: { child_items: i.children.map( c => c.key ) } } : {} },
+				extensions: i.children ? { mix_and_match: { child_items: i.children.map( c => c.key ) } } : i.plan ? { 'kaupang-subscriptions': planData( i ) } : {} },
 			...( i.children || [] ).map( c => ( { key: c.key, id: c.id, name: c.key, quantity: c.quantity, prices: { price: '0' }, totals: {},
 				extensions: { mix_and_match: { container: i.key } } } ) ),
 		] ),
@@ -113,6 +119,12 @@ function fakeServer( items, { latency = () => 50, fail = () => null, hang = () =
 				line.quantity = data.quantity;
 			} else if ( route === 'cart/remove-item' ) {
 				cart.splice( cart.findIndex( i => i.key === data.key ), 1 );
+			} else if ( route === 'cart/extensions' ) {
+				// kaupang-subscriptions' set_plan: the line's data changes, and with it its key.
+				const line = cart.find( i => i.key === data.data?.key );
+				if ( data.namespace !== 'kaupang-subscriptions' || ! line ) return reply( 400, { code: 'kaupang_subscriptions_action', message: 'not understood', data: {} } );
+				line.rhythm = data.data.rhythm;
+				line.key = line.key.split( '@' )[ 0 ] + ( line.rhythm === '0' ? '' : '@' + line.rhythm );
 			} else if ( route === 'cart/apply-coupon' ) {
 				coupons.push( data.code );
 			}
@@ -1395,6 +1407,54 @@ function mountLines( list, status = { textContent: '' } ) {
 		jq.dom[ '[data-lean-cart="checkout-lines"]' ] = root;
 	} };
 }
+
+const subsModule = async ( store ) => ( await import( pathToFileURL( path.join( jsDir, 'modules/kaupang-subscriptions.js' ) ).href ) ).init( store );
+
+await scenario( 'kaupang-subscriptions: the Store API data becomes the neutral line fields', async () => {
+	fakeServer( [ { key: 'r@week-4', id: 1, quantity: 1, plan: true, rhythm: 'week-4', every: 2 }, { key: 'o', id: 2, quantity: 1, plan: true }, { key: 'p', id: 3, quantity: 1 } ] );
+	const { store } = await freshStore();
+	await subsModule( store );
+	await store.fetchCart();
+	const [ r, o, p ] = [ 'r@week-4', 'o', 'p' ].map( k => store.getState().items.find( i => i.key === k ) );
+	ok( r?.purchaseMode === 'subscription' && r.badges.includes( 'Abonnement' ) && r.subscriptionSummary === 'Hver 4. uke', `recurring: mode, badge, cadence (got ${ r?.purchaseMode } ${ r?.badges } ${ r?.subscriptionSummary })` );
+	ok( r?.subscriptionNote === 'Blir med i pakken din, annenhver levering', `joins the package on every 2: "Blir med i pakken din, annenhver levering" (got ${ r?.subscriptionNote })` );
+	const opts = r?.planChoice?.options || [];
+	ok( JSON.stringify( opts.map( x => [ x.label, x.price, x.selected ] ) ) === JSON.stringify( [ [ 'Engangskjøp', 'kr\u00a0198', false ], [ 'Hver 2. uke', 'kr\u00a0178,20', false ], [ 'Hver 4. uke', 'kr\u00a0178,20', true ] ] ), `choice: one-time, then each rhythm with its price, the line's own selected (got ${ JSON.stringify( opts.map( x => [ x.label, x.price, x.selected ] ) ) })` );
+	ok( JSON.stringify( opts[ 0 ]?.update ) === JSON.stringify( { namespace: 'kaupang-subscriptions', data: { action: 'set_plan', key: 'r@week-4', rhythm: '0' } } ), `each option carries its set_plan update (got ${ JSON.stringify( opts[ 0 ]?.update ) })` );
+	ok( o?.purchaseMode === 'one-time' && o.planChoice?.options[ 0 ].selected && ! o.subscriptionNote && ! o.badges.length, 'a one-time line of a plan product: one-time selected, no badge, no note' );
+	ok( p?.purchaseMode === null && p.planChoice === null && p.subscriptionSummary === null, 'a line without the data: untouched' );
+} );
+
+await scenario( 'kaupang-subscriptions: a switch goes through the queue, after the line\'s waiting quantity change', async () => {
+	const srv = fakeServer( [ { key: 'r@week-4', id: 1, quantity: 1, plan: true, rhythm: 'week-4' } ], { latency: () => 80 } );
+	const { store, errors } = await freshStore();
+	await subsModule( store );
+	await store.fetchCart();
+	const q = store.changeQuantity( 'r@week-4', 1 ); // debounced: not sent yet
+	const option = store.getState().items[ 0 ].planChoice.options.find( x => x.label === 'Hver 2. uke' );
+	const sw = store.updateExtension( option.update.namespace, option.update.data, { key: 'r@week-4' } );
+	ok( store.getState().items[ 0 ].lineTotal === '...', 'the line shows as updating at once' );
+	ok( await settles( Promise.all( [ q, sw ] ) ), 'both settle' );
+	ok( JSON.stringify( routes( srv ).slice( 1 ) ) === JSON.stringify( [ 'cart/update-item', 'cart/extensions' ] ) && srv.maxInFlight === 1, `the quantity change is sent first, one request at a time (got ${ routes( srv ).slice( 1 ) }, max ${ srv.maxInFlight })` );
+	ok( lines( store.getState().items ) === 'r@week-2=2' && lines( srv.cart ) === 'r@week-2=2', `the cart is the server's: r@week-2=2 (got ${ lines( store.getState().items ) })` );
+	ok( errors.length === 0, `no error (got ${ errors.length })` );
+	await store.updateExtension( 'kaupang-subscriptions', { action: 'set_plan', key: 'gone', rhythm: '0' } );
+	ok( errors.length === 1 && lines( store.getState().items ) === 'r@week-2=2', 'a refused update emits one error and keeps the real cart' );
+} );
+
+await scenario( 'kaupang-subscriptions: the line renders the choice, and focus stays on it across the re-key', async () => {
+	const ui = await import( pathToFileURL( path.join( jsDir, 'cart-ui.js' ) ).href );
+	const choice = { label: 'Kjøp', options: [ { label: 'Engangskjøp', price: 'kr 198', selected: false }, { label: 'Hver 4. uke', price: 'kr 178,20', selected: true } ] };
+	const item = { key: 'r', title: 'Kaffe "x"', image: null, permalink: '', metaRows: [], badges: [ 'Abonnement' ], children: [], quantity: 1, quantityLimits: { minimum: 1, maximum: 9 }, lineTotal: 'kr 178,20',
+		subscriptionSummary: 'Hver 4. uke', subscriptionNote: 'Blir med i pakken din, hver levering', planChoice: choice };
+	const html = ui.renderItem( item );
+	ok( html.includes( '<select class="cart-item-plan" data-cart-action="plan" aria-label="Kjøp Kaffe &quot;x&quot;">' ) && html.includes( '<option value="1" selected>Hver 4. uke · kr 178,20</option>' ), 'a select named after the line, the line\'s plan selected' );
+	ok( ! html.includes( 'cart-item-subscription"' ) && html.includes( 'cart-item-subscription-note">Blir med i pakken din, hver levering' ), 'the cadence is the select\'s (no second summary); the note shows' );
+	ok( ui.renderItem( { ...item, planChoice: null } ).includes( 'cart-item-subscription">Hver 4. uke' ), 'without a choice, the summary shows' );
+	const after = [ { key: 'r@week-2', quantity: 1, quantityLimits: { minimum: 1, maximum: 9 }, planChoice: choice } ];
+	ok( JSON.stringify( ui.focusTarget( { key: 'r', action: 'plan', index: 0 }, after ) ) === JSON.stringify( { key: 'r@week-2', action: 'plan' } ), 'a switch that re-keyed the line: focus on the choice of the line in its place' );
+	ok( JSON.stringify( ui.focusTarget( { key: 'r', action: 'remove', index: 0 }, after ) ) === JSON.stringify( { key: 'r@week-2', action: 'remove' } ), 'a removed line still hands focus to the next line\'s remove' );
+} );
 
 await scenario( 'prices: as wc_price() prints them, from the store\'s format', async () => {
 	const { store } = await freshStore();

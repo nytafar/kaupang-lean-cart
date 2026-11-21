@@ -4,13 +4,18 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 
 ## [Unreleased]
 
+### Added
+- kaupang-subscriptions module: a line bought on a rhythm shows the badge and its cadence, a line that joins the customer's package says so ("Blir med i pakken din, annenhver levering"), and the line can be switched between one-time and the plan's rhythms (a `select.cart-item-plan`, in the drawer and the checkout lines; the totals follow). Loaded only where kaupang-subscriptions is active and its storefront `enabled`.
+- Neutral line fields `subscriptionNote` and `planChoice` (options carrying the Store API extension update they send), beside `purchaseMode` and `subscriptionSummary`; the UI renders them for any engine. `store.updateExtension( namespace, data, { key, trigger } )` sends `POST cart/extensions` through the cart's queue (also on `window.leanCart.store`).
+
 ### Fixed
 - Amounts read as WooCommerce prints them ("kr 327", "kr 1 813,20"), not by the browser's Intl locale rules ("327 kr"), so the cart panel, the checkout lines and WooCommerce's totals rows agree. `config.currency` carries wc_price()'s inputs (`wc_price_args`, the store's currency position and separators, `woocommerce_price_trim_zeros`) as `decimals`, `decimalSeparator`, `thousandSeparator`, `prefix`, `suffix` and `trimZeros`; whole amounts are short only where the store trims zeros. `currency.locale` is gone (`code`, `symbol`, `minorUnit` stay). `tools/check.php` proves the config against `wc_price()` for this store and another store's settings.
 - The cart's shipping row no longer reads "Gratis" before a shipping rate is chosen (a new session with no address: the Store API's shipping total is 0 then). It reads "Beregnes i kassen" (new string `shippingPending`) until each package has a selected rate, "Gratis" for a selected rate costing 0, and is left out when nothing ships. Normalized carts carry `shippingState` (`none`, `pending`, `free`, `paid`); the checkout seed carries each rate's `selected`.
 - Cart lines no longer load the original product image: they use the catalog thumbnail with its `srcset`, `sizes` (the config's new `imageSizes`, default `56px`), `width`/`height`, `loading="lazy"` and `decoding="async"`, and the image box keeps its square while it loads. The checkout seed carries the image's `thumbnail` and `srcset`.
 
 ### Changed
-- check.php runs the load budget audit.
+- The recurring totals rows read the neutral i18n keys `recurringTotal` and `nextPayment` (were `subliumRecurring`, `subliumNextPayment`; the Sublium module sets them).
+- check.php runs the load budget audit, and now checks each active extension module's import (it took every extension for inactive).
 - The cart's JS loads as WordPress core script modules (`@kaupang/lean-cart/<name>`). Core prints the page's one import map, so pages with Interactivity blocks (the FAQ accordion) no longer carry two maps, and it preloads the static imports (`config`, `api`, `store`, `ui`, `add`), so the three-level import chain becomes one round. Extension and classic-page modules are dynamic imports (preloaded on the shortcode checkout, as before). Each file is versioned with its own modification time.
 - The config is core's script module data (`script_module_data_@kaupang/lean-cart/config`, read by the new `cart-config.js`); the `kaupang/lean-cart/config` filter is unchanged. The shortcode checkout's cart seed goes into it when core prints it in the footer.
 - `lean-cart.css` is no longer render-blocking: it styles only the drawer and the checkout lines, so `cart-init.js` adds it on the first interaction (`pointerdown`, `keydown`, `lean-cart:open`), before the page's other stylesheets so theme overrides still win. It stays in `<head>` on the shortcode checkout and lean-checkout's page. `kaupang/lean-cart/disable_styles` still turns it off; `wp_dequeue_style()` alone no longer does.

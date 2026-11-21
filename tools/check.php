@@ -138,7 +138,7 @@ foreach ( array_merge( glob( $dir . '*.js' ), glob( $dir . 'modules/*.js' ) ) as
 	$active = $config['modules'] ?? [];
 	foreach ( $m[1] as $spec ) {
 		$ext = substr( $spec, strlen( '@kaupang/lean-cart/' ) );
-		$off = isset( array_flip( [ 'subscriptions', 'mix-and-match', 'all-products-subs', 'sublium-subscriptions' ] )[ $ext ] ) && ! in_array( $ext, $mapped, true );
+		$off = isset( array_flip( [ 'subscriptions', 'mix-and-match', 'all-products-subs', 'sublium-subscriptions', 'kaupang-subscriptions' ] )[ $ext ] ) && ! in_array( $spec, $mapped, true );
 		$ok( str_starts_with( $spec, '@kaupang/lean-cart/' ) && ( in_array( $spec, $mapped, true ) || $off ), basename( $file ) . " imports {$spec}" . ( $off ? ' (extension inactive here, not mapped)' : '' ) );
 	}
 	$ok( ! str_contains( $src, 'window.leanCartConfig' ), basename( $file ) . ' reads no window.leanCartConfig' );

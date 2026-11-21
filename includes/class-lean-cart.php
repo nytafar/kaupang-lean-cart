@@ -69,5 +69,11 @@ final class Lean_Cart {
 			require_once KAUPANG_LEAN_CART_PATH . 'includes/modules/class-sublium-subscriptions.php';
 			new Lean_Cart_Sublium_Subscriptions();
 		}
+
+		// Where its storefront sells on a rhythm (its `enabled` setting); off, its cart data offers nothing.
+		if ( class_exists( '\Kaupang\Subscriptions\Plugin' ) && \Kaupang\Subscriptions\Plugin::enabled() ) {
+			require_once KAUPANG_LEAN_CART_PATH . 'includes/modules/class-kaupang-subscriptions.php';
+			new Lean_Cart_Kaupang_Subscriptions();
+		}
 	}
 }

@@ -125,8 +125,15 @@ function normalizeItem( raw ) {
 		children:       [],
 		isChild:        false,
 		parentKey:      null,
+		// Neutral subscription fields, filled by an extension module from its engine's Store API data:
+		// 'subscription' | 'one-time' | null; the cadence ("Hver 4. uke"); a further line about it
+		// ("Blir med i pakken din, hver levering"); and the choice between plans, or null:
+		// { label, options: [ { label, price, selected, update: { namespace, data } } ] },
+		// where `update` is what choosing that option sends (store.updateExtension()).
 		purchaseMode:   null,
 		subscriptionSummary: null,
+		subscriptionNote: null,
+		planChoice:     null,
 		metaRows:       [
 			...( raw.variation || [] ).map( v => ({ key: v.attribute, value: v.value, type: 'text' }) ),
 			...( raw.item_data || [] ).map( d => ({ key: d.name, value: d.display || d.value, type: 'text' }) ),
@@ -385,7 +392,9 @@ function debouncedUpdate( key, delta ) {
 
 	return new Promise( ( resolve ) => {
 		entry.waiters.push( resolve );
-		entry.timer = setTimeout( () => {
+		entry.fire = () => {
+			clearTimeout( entry.timer );
+			debounced.delete( key );
 			send( entry.id, async () => {
 				if ( outdated ) {
 					// A classic page request changed the cart meanwhile: count from it, not from before it.
@@ -406,9 +415,14 @@ function debouncedUpdate( key, delta ) {
 			} )
 				.catch( err => emit( 'lean-cart:error', err ) )
 				.finally( () => entry.waiters.forEach( settle => settle() ) );
-			debounced.delete( key );
-		}, DEBOUNCE_MS );
+		};
+		entry.timer = setTimeout( entry.fire, DEBOUNCE_MS );
 	} );
+}
+
+/** Send a line's waiting quantity change now, so it takes its turn ahead of what comes next. */
+function flushDebounce( key ) {
+	debounced.get( key )?.fire();
 }
 
 function cancelDebounce( key ) {
@@ -530,6 +544,40 @@ export async function removeCoupon( code ) {
 		await send( 0, () => api.removeCoupon( { code } ) );
 	} catch ( err ) {
 		emit( 'lean-cart:error', err );
+	}
+}
+
+/**
+ * Send a Store API extension's update (POST cart/extensions, `{ namespace, data }`)
+ * in the cart's queue; the cart it answers is committed as any write's. A
+ * line's plan choice (`item.planChoice`) carries the update each option makes.
+ * With `key`, that line shows as updating until the answer lands, and a
+ * quantity change still waiting for it is sent first: the update may re-key
+ * the line, and the change would then miss it.
+ *
+ * @param {string} namespace - The extension's namespace.
+ * @param {object} data      - What its update callback reads.
+ * @param {object} options   - { key, trigger }.
+ */
+export async function updateExtension( namespace, data, { key = null, trigger = null } = {} ) {
+	if ( key ) flushDebounce( key );
+	const id = ++lastId;
+	setLoading( trigger, true );
+
+	if ( key ) {
+		pending.set( id, ( draft ) => {
+			const item = draft.items.find( i => i.key === key );
+			if ( item ) item.lineTotal = item.lineSubtotal = '...'; // Will be replaced by server response.
+		} );
+		publish();
+	}
+
+	try {
+		await send( id, () => api.updateExtension( { namespace, data } ) );
+	} catch ( err ) {
+		emit( 'lean-cart:error', err );
+	} finally {
+		setLoading( trigger, false );
 	}
 }
 

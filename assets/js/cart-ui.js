@@ -77,9 +77,16 @@ export function renderItem( item, price = item.lineTotal ) {
 		? `<span class="cart-item-badges">${ badgeLabels.map( b => `<span class="cart-badge">${esc( b )}</span>` ).join( '' ) }</span>`
 		: '';
 
-	const subSummary = item.subscriptionSummary
+	// The cadence, unless the plan choice shows it already.
+	const subSummary = item.subscriptionSummary && ! item.planChoice?.options?.length
 		? `<span class="cart-item-subscription">${esc( item.subscriptionSummary )}</span>`
 		: '';
+
+	const subNote = item.subscriptionNote
+		? `<span class="cart-item-subscription-note">${esc( item.subscriptionNote )}</span>`
+		: '';
+
+	const plan = renderPlanChoice( item );
 
 	const children = item.children.length
 		? `<div class="cart-children">${ item.children.map( renderChildItem ).join( '' ) }</div>`
@@ -97,6 +104,8 @@ export function renderItem( item, price = item.lineTotal ) {
 				${ meta }
 				${ badges }
 				${ subSummary }
+				${ subNote }
+				${ plan }
 			</div>
 			<div class="cart-item-actions">
 				<div class="quantity-control">
@@ -114,6 +123,20 @@ export function renderItem( item, price = item.lineTotal ) {
 	`;
 }
 
+/**
+ * The line's choice between plans (item.planChoice, filled by an extension
+ * module): a select whose option values are indexes into planChoice.options;
+ * cart-init.js sends the chosen option's `update` on change.
+ */
+function renderPlanChoice( item ) {
+	const choice = item.planChoice;
+	if ( ! choice?.options?.length ) return '';
+	const options = choice.options.map( ( o, i ) =>
+		`<option value="${ i }"${ o.selected ? ' selected' : '' }>${esc( o.price ? `${ o.label } · ${ o.price }` : o.label )}</option>`
+	).join( '' );
+	return `<select class="cart-item-plan" data-cart-action="plan" aria-label="${esc( `${ choice.label || '' } ${ item.title }`.trim() )}">${ options }</select>`;
+}
+
 function renderChildItem( child ) {
 	const image = child.image ? renderImage( child.image, 32, '32px' ) : '';
 
@@ -128,23 +151,24 @@ function renderChildItem( child ) {
 
 // ── Painting a list of lines, keeping focus ─────────────────────
 
-const CONTROL = { increase: '[data-cart-action="increase"]', decrease: '[data-cart-action="decrease"]', remove: '[data-cart-action="remove"]', title: '.cart-item-title' };
+const CONTROL = { increase: '[data-cart-action="increase"]', decrease: '[data-cart-action="decrease"]', remove: '[data-cart-action="remove"]', plan: '[data-cart-action="plan"]', title: '.cart-item-title' };
 
 /**
  * Where focus goes after the lines re-render, given the control that had it
  * ({ key, action, index }) and the new top-level lines: the same control if it
  * can still take focus, else the line's other enabled control; for a line that
- * is gone, the remove button of the line now in its place (or the last one).
+ * is gone, the remove button of the line now in its place (or the last one),
+ * or its plan choice when that had focus (switching a plan may re-key the line).
  * Null when no line is left.
  */
 export function focusTarget( had, items ) {
 	const item = items.find( i => i.key === had.key );
 	if ( ! item ) {
 		const next = items[ Math.min( had.index, items.length - 1 ) ];
-		return next ? { key: next.key, action: 'remove' } : null;
+		return next ? { key: next.key, action: had.action === 'plan' && next.planChoice?.options?.length ? 'plan' : 'remove' } : null;
 	}
 	const { minimum, maximum } = item.quantityLimits;
-	const enabled = { decrease: item.quantity > ( minimum || 1 ), increase: item.quantity < ( maximum || 9999 ), remove: true, title: true };
+	const enabled = { decrease: item.quantity > ( minimum || 1 ), increase: item.quantity < ( maximum || 9999 ), remove: true, title: true, plan: !! item.planChoice?.options?.length };
 	const action = [ had.action, had.action === 'increase' ? 'decrease' : 'increase', 'remove' ].find( a => enabled[ a ] );
 	return { key: item.key, action };
 }
@@ -182,12 +206,12 @@ function renderRecurringTotals( recurringTotals = [] ) {
 		<div class="cart-recurring-totals">
 			${ recurringTotals.map( total => `
 				<div class="totals-row totals-row--recurring">
-					<span class="totals-label">${esc( i18n.subliumRecurring || 'Fornyes' )}</span>
+					<span class="totals-label">${esc( i18n.recurringTotal || 'Fornyes' )}</span>
 					<span class="totals-value">${esc( total.total )}</span>
 				</div>
 				${ total.nextPaymentDate ? `
 					<div class="totals-row totals-row--meta">
-						<span class="totals-label">${esc( i18n.subliumNextPayment || 'Neste betaling' )}</span>
+						<span class="totals-label">${esc( i18n.nextPayment || 'Neste betaling' )}</span>
 						<span class="totals-value">${esc( total.nextPaymentDate )}</span>
 					</div>
 				` : '' }

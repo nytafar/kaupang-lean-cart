@@ -27,6 +27,7 @@ class Lean_Cart_Assets {
 		'mix-and-match'         => 'mixAndMatch',
 		'all-products-subs'     => 'allProductsSubs',
 		'sublium-subscriptions' => 'subliumSubscriptions',
+		'kaupang-subscriptions' => 'kaupangSubscriptions',
 	];
 
 	private string $css_url = '';
@@ -43,6 +44,7 @@ class Lean_Cart_Assets {
 			'mix-and-match'         => class_exists( 'WC_Mix_and_Match' ),
 			'all-products-subs'     => class_exists( 'WCS_ATT' ),
 			'sublium-subscriptions' => class_exists( '\Sublium_WCS\Plugin' ) || function_exists( 'sublium_init' ),
+			'kaupang-subscriptions' => class_exists( 'Lean_Cart_Kaupang_Subscriptions', false ), // loaded where it runs (Lean_Cart::load_modules())
 		];
 	}
 

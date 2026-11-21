@@ -38,6 +38,8 @@ cart-init.js          Entry point — boots store, UI, modules
       ├── subscriptions.js
       ├── mix-and-match.js
       ├── all-products-subs.js
+      ├── sublium-subscriptions.js
+      ├── kaupang-subscriptions.js
       ├── classic-pages.js   WooCommerce classic cart page / shortcode checkout bridge
       └── checkout-lines.js  Lean Cart's item lines in the shortcode checkout's order review
 ```
@@ -57,6 +59,9 @@ Lean Cart includes native modular support for:
 - **WooCommerce Subscriptions** — billing period summaries, signup fee and trial period meta rows, subscription badges.
 - **WooCommerce Mix and Match Products** — form extractor for `mnm_config`, parent-child grouping in the cart, container badges. Includes a server-side guard that rejects misconfigured containers.
 - **All Products for WooCommerce Subscriptions** — custom Store API extension exposing active subscription schemes, purchase mode display (one-time vs. subscription).
+- **kaupang-subscriptions** (where its storefront is `enabled`) — reads its own Store API data (`extensions['kaupang-subscriptions']`): the badge, the cadence, "Blir med i pakken din, annenhver levering" for a line that joins the customer's package, and the switch between one-time and the plan's rhythms, sent as its `set_plan` update. The product page's plan field reaches add-to-cart through kaupang-subscriptions' own form extractor.
+
+**Neutral line fields.** The cart's UI names no subscription engine. A module maps its engine's Store API data onto each line: `purchaseMode` (`'subscription'`, `'one-time'` or null), `badges`, `subscriptionSummary` (the cadence), `subscriptionNote` (a further line about it) and `planChoice`: `{ label, options: [ { label, price, selected, update: { namespace, data } } ] }`. The line renders the choice as a `select.cart-item-plan` (the summary is then left out: the select shows it); choosing an option sends its `update` with `store.updateExtension()`. A cart-level module fills `recurringTotals`. The next engine is one module that fills these fields.
 
 Adding support for a new plugin means creating one PHP class in `includes/modules/` and one JS module in `assets/js/modules/` — no core changes required.
 
@@ -104,6 +109,8 @@ window.leanCart.close()   // Dispatch lean-cart:close event
 window.leanCart.store.whenIdle()     // Resolves once queued writes and debounced changes have landed
 window.leanCart.store.enqueue( fn, { timeout } )  // Run your own Store API call (fn returns its promise) in the cart's queue
 window.leanCart.store.invalidate()   // The cart changed outside the store: the next quantity change re-reads it first
+window.leanCart.store.updateExtension( namespace, data, { key, trigger } )  // POST cart/extensions (a plugin's Store API update callback) in the queue; with `key`, that line shows as updating and its waiting quantity change is sent first
+window.leanCart.store.formatPrice( minor )  // An amount in minor units, as WooCommerce prints it
 ```
 
 **One write queue.** WooCommerce saves the cart session whole per request, so overlapping Store API writes lose updates. Every store call goes through one queue. Writes also run under the Web Lock `kaupang-lean-cart` where the browser has it (tabs of a shop share one session); after 25 s without the lock, or if it is refused, they run without it. Reads (`fetchCart`) skip the lock. Each request times out after 20 s, so the queue always moves on. A write that timed out may still finish in PHP, so the store waits 10 s before re-reading the cart. Code that writes to the Store API itself should pass the call through `store.enqueue()` and then `refresh()`. An enqueued call gives up its turn after `timeout` ms (default 20000); `timeout: Infinity` holds it until the call settles (an order submit), so the call must time out by itself. Before leaving the page with pending changes (e.g. to checkout), await `store.whenIdle()` with a deadline. Lean Cart's own `[data-lean-cart="checkout-url"]` links already do.
@@ -114,7 +121,7 @@ Guest storefront, measured with `wp kaupang-assets audit --plugins=kaupang-lean-
 
 | Context | PHP files | Assets | Autoloaded options |
 |---|---|---|---|
-| Every storefront page | main, `Lean_Cart`, `Lean_Cart_Assets`, `Lean_Cart_Hooks`, `Lean_Cart_Notices` (5), + one class per active extension plugin (Subscriptions, Mix and Match, All Products for Subscriptions, Sublium): 8 on staging.myrvann.no. The page renders the header count and the drawer, and the notices and cookie sync run on every view | module `@kaupang/lean-cart/init`; static imports `config`, `api`, `store`, `ui`, `add` preloaded; extension modules (active ones only), `classic-pages`, `checkout-lines` mapped as dynamic imports; config as module data. No stylesheet in `<head>`: `lean-cart.css` on the first interaction | none |
+| Every storefront page | main, `Lean_Cart`, `Lean_Cart_Assets`, `Lean_Cart_Hooks`, `Lean_Cart_Notices` (5), + one class per active extension plugin (Subscriptions, Mix and Match, All Products for Subscriptions, Sublium, kaupang-subscriptions): 9 on staging.myrvann.no. The page renders the header count and the drawer, and the notices and cookie sync run on every view | module `@kaupang/lean-cart/init`; static imports `config`, `api`, `store`, `ui`, `add` preloaded; extension modules (active ones only), `classic-pages`, `checkout-lines` mapped as dynamic imports; config as module data. No stylesheet in `<head>`: `lean-cart.css` on the first interaction | none |
 | Shortcode checkout (`checkout`) | same | + `kaupang-lean-cart-styles` in `<head>` (the order review's lines show with the page); the extension and classic-page modules are preloaded too, and the config carries the cart | none |
 | lean-checkout's page (`lean_checkout`) | same | + `kaupang-lean-cart-styles` (lean-checkout enqueues it for the summary) | none |
 | Store API (REST) | same | — | none |

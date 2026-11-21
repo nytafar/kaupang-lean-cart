@@ -22,9 +22,10 @@ class Lean_Cart_Sublium_Subscriptions {
 
 	public function extend_config( array $config ): array {
 		$config['i18n']['subliumSubscription'] = __( 'Abonnement', 'kaupang-lean-cart' );
-		$config['i18n']['subliumRecurring']    = __( 'Fornyes', 'kaupang-lean-cart' );
+		// The cart's neutral recurring-totals rows (cart-ui.js renderRecurringTotals()).
+		$config['i18n']['recurringTotal']      = __( 'Fornyes', 'kaupang-lean-cart' );
 		$config['i18n']['subliumToday']        = __( 'Betales i dag', 'kaupang-lean-cart' );
-		$config['i18n']['subliumNextPayment']  = __( 'Neste betaling', 'kaupang-lean-cart' );
+		$config['i18n']['nextPayment']         = __( 'Neste betaling', 'kaupang-lean-cart' );
 		$config['i18n']['subliumSignupFee']    = __( 'Oppstartsavgift', 'kaupang-lean-cart' );
 		$config['i18n']['subliumTrial']        = __( 'Prøveperiode', 'kaupang-lean-cart' );
 
