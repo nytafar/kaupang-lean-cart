@@ -5,7 +5,7 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 ## [Unreleased]
 
 ### Added
-- kaupang-subscriptions module: a line bought on a rhythm shows the badge and its cadence, a line that joins the customer's package says so ("Blir med i pakken din, annenhver levering"), and the line can be switched between one-time and the plan's rhythms (a `select.cart-item-plan`, in the drawer and the checkout lines; the totals follow). Loaded only where kaupang-subscriptions is active and its storefront `enabled`.
+- kaupang-subscriptions module: a line bought on a rhythm shows the badge and its cadence, a line that joins the customer's package says so ("Blir med i pakken din, annenhver levering"), and the line can be switched between one-time and the plan's rhythms (a `select.cart-item-plan` beside the badge, in the drawer and the checkout lines; the totals follow). The select is compact whatever size the theme gives form controls; where the browser has the customizable select (`appearance: base-select`) the closed box shows the chosen plan and the open list each plan with its price, elsewhere every option reads "Hver 4. uke · kr 269,10". Loaded only where kaupang-subscriptions is active and its storefront `enabled`.
 - Neutral line fields `subscriptionNote` and `planChoice` (options carrying the Store API extension update they send), beside `purchaseMode` and `subscriptionSummary`; the UI renders them for any engine. `store.updateExtension( namespace, data, { key, trigger } )` sends `POST cart/extensions` through the cart's queue (also on `window.leanCart.store`). While a line's update is in flight the line is `busy` and the store ignores its other changes, which would carry its old key.
 
 ### Fixed

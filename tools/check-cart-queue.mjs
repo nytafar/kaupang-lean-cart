@@ -1472,7 +1472,8 @@ await scenario( 'kaupang-subscriptions: the line renders the choice, and focus s
 	const item = { key: 'r', title: 'Kaffe "x"', image: null, permalink: '', metaRows: [], badges: [ 'Abonnement' ], children: [], quantity: 1, quantityLimits: { minimum: 1, maximum: 9 }, lineTotal: 'kr 178,20',
 		subscriptionSummary: 'Hver 4. uke', subscriptionNote: 'Blir med i pakken din, hver levering', planChoice: choice };
 	const html = ui.renderItem( item );
-	ok( html.includes( '<select class="cart-item-plan" data-cart-action="plan" aria-label="Kjøp Kaffe &quot;x&quot;">' ) && html.includes( '<option value="1" selected>Hver 4. uke · kr 178,20</option>' ), 'a select named after the line, the line\'s plan selected' );
+	ok( html.includes( '<select class="cart-item-plan" data-cart-action="plan" aria-label="Kjøp Kaffe &quot;x&quot;">' ) && html.includes( '<button type="button"><selectedcontent></selectedcontent></button>' ) && html.includes( '<option value="1" selected><span class="cart-item-plan-label">Hver 4. uke</span><span class="cart-item-plan-price"> · kr 178,20</span></option>' ), 'a select named after the line, the line\'s plan selected; each option with its price (a span the closed box hides)' );
+	ok( /<div class="cart-item-plan-row"><span class="cart-item-badges">.*<\/span><select/s.test( html ), 'the badge and the choice share a row' );
 	ok( ! html.includes( 'cart-item-subscription"' ) && html.includes( 'cart-item-subscription-note">Blir med i pakken din, hver levering' ), 'the cadence is the select\'s (no second summary); the note shows' );
 	ok( ui.renderItem( { ...item, planChoice: null } ).includes( 'cart-item-subscription">Hver 4. uke' ), 'without a choice, the summary shows' );
 	const after = [ { key: 'r@week-2', quantity: 1, quantityLimits: { minimum: 1, maximum: 9 }, planChoice: choice } ];

@@ -105,10 +105,9 @@ export function renderItem( item, price = item.lineTotal ) {
 			<div class="cart-item-details">
 				<a href="${esc( item.permalink )}" class="cart-item-title">${esc( item.title )}</a>
 				${ meta }
-				${ badges }
+				${ plan ? `<div class="cart-item-plan-row">${ badges }${ plan }</div>` : badges }
 				${ subSummary }
 				${ subNote }
-				${ plan }
 			</div>
 			<div class="cart-item-actions">
 				<div class="quantity-control">
@@ -134,10 +133,14 @@ export function renderItem( item, price = item.lineTotal ) {
 function renderPlanChoice( item ) {
 	const choice = item.planChoice;
 	if ( ! choice?.options?.length ) return '';
+	// Each option names its price. Where the browser has the customizable select
+	// (appearance: base-select, lean-cart.css), the closed box shows only the
+	// chosen plan's label (its price is the line's); elsewhere the parser drops
+	// the button and the spans and keeps the text, "Hver 4. uke · kr 269,10".
 	const options = choice.options.map( ( o, i ) =>
-		`<option value="${ i }"${ o.selected ? ' selected' : '' }>${esc( o.price ? `${ o.label } · ${ o.price }` : o.label )}</option>`
+		`<option value="${ i }"${ o.selected ? ' selected' : '' }><span class="cart-item-plan-label">${esc( o.label )}</span>${ o.price ? `<span class="cart-item-plan-price"> · ${esc( o.price )}</span>` : '' }</option>`
 	).join( '' );
-	return `<select class="cart-item-plan" data-cart-action="plan" aria-label="${esc( `${ choice.label || '' } ${ item.title }`.trim() )}"${ item.busy ? ' aria-disabled="true"' : '' }>${ options }</select>`;
+	return `<select class="cart-item-plan" data-cart-action="plan" aria-label="${esc( `${ choice.label || '' } ${ item.title }`.trim() )}"${ item.busy ? ' aria-disabled="true"' : '' }><button type="button"><selectedcontent></selectedcontent></button>${ options }</select>`;
 }
 
 function renderChildItem( child ) {
