@@ -4,7 +4,7 @@ Tags: woocommerce, store-api, cart, mini-cart, developer-friendly
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.2.3
+Stable tag: 0.3.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -213,6 +213,26 @@ Create a PHP module class in `includes/modules/` that hooks into `kaupang/lean-c
 No screenshots. Lean Cart is a headless cart layer with no admin interface — all visual output is controlled by your theme.
 
 == Changelog ==
+
+= 0.3.0 – 2026-11-26 =
+
+**Fixed**
+* Amounts read as WooCommerce prints them ("kr 327", "kr 1 813,20"), not by the browser's Intl locale rules ("327 kr"), so the cart panel, the checkout lines and WooCommerce's totals rows agree. `config.currency` carries wc_price()'s inputs (`wc_price_args`, the store's currency position and separators, `woocommerce_price_trim_zeros`) as `decimals`, `decimalSeparator`, `thousandSeparator`, `prefix`, `suffix` and `trimZeros`; whole amounts are short only where the store trims zeros. `currency.locale` is gone (`code`, `symbol`, `minorUnit` stay). `tools/check.php` proves the config against `wc_price()` for this store and another store's settings.
+* The cart's shipping row no longer reads "Gratis" before a shipping rate is chosen (a new session with no address: the Store API's shipping total is 0 then). It reads "Beregnes i kassen" (new string `shippingPending`) until each package has a selected rate, "Gratis" for a selected rate costing 0, and is left out when nothing ships. Normalized carts carry `shippingState` (`none`, `pending`, `free`, `paid`); the checkout seed carries each rate's `selected`.
+* Cart lines no longer load the original product image: they use the catalog thumbnail with its `srcset`, `sizes` (the config's new `imageSizes`, default `56px`), `width`/`height`, `loading="lazy"` and `decoding="async"`, and the image box keeps its square while it loads. The checkout seed carries the image's `thumbnail` and `srcset`.
+
+**Changed**
+* check.php runs the load budget audit.
+* The cart's JS loads as WordPress core script modules (`@kaupang/lean-cart/<name>`). Core prints the page's one import map, so pages with Interactivity blocks (the FAQ accordion) no longer carry two maps, and it preloads the static imports (`config`, `api`, `store`, `ui`, `add`), so the three-level import chain becomes one round. Extension and classic-page modules are dynamic imports (preloaded on the shortcode checkout, as before). Each file is versioned with its own modification time.
+* The config is core's script module data (`script_module_data_@kaupang/lean-cart/config`, read by the new `cart-config.js`); the `kaupang/lean-cart/config` filter is unchanged. The shortcode checkout's cart seed goes into it when core prints it in the footer.
+* `lean-cart.css` is no longer render-blocking: it styles only the drawer and the checkout lines, so `cart-init.js` adds it on the first interaction (`pointerdown`, `keydown`, `lean-cart:open`), before the page's other stylesheets so theme overrides still win. It stays in `<head>` on the shortcode checkout and lean-checkout's page. `kaupang/lean-cart/disable_styles` still turns it off; `wp_dequeue_style()` alone no longer does.
+
+**Removed**
+* Lean Cart's own import map, its `script_loader_tag` rewrite to `type="module"` and the `kaupang/lean-cart/importmap_imports` filter (its one user, lean-checkout, registers its own modules with core now).
+* `window.leanCartConfig`. No reader outside the plugin was found (themes on the myrvann, nyta and zenso sites, kaupang-wholesale, kaupang-crm, lean-checkout, server scripts). `window.leanCart` and the `lean-cart:*` events are unchanged.
+
+**Added**
+* `tools/check.php` (`wp eval-file`): one import map, the static imports preloaded, dynamic ones only mapped, config as module data, where the stylesheet loads, every JS import a registered id, and the hooks that work outside page views. `tools/load-budget.php` and a README load map.
 
 = 0.2.3 – 2026-10-24 =
 
