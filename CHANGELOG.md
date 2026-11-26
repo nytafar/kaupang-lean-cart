@@ -4,6 +4,9 @@ All notable changes to this plugin are documented here. Format: [Keep a Changelo
 
 ## [Unreleased]
 
+### Fixed
+- The drawer's shipping row reads «Beregnes i kassen» until every package has a shipping rate chosen, instead of «Gratis»: the Store API's shipping total is 0 before any rate is calculated. `normalizeCart()` derives `shippingState` (`none`, `pending`, `free`, `paid`) from `needs_shipping` and the packages' selected rates; the row is left out when nothing ships. The checkout seed keeps each rate's `selected` flag. New string `shippingPending` in `kaupang/lean-cart/i18n`. Backported from main (efa4c49, #5) without its thumbnail change.
+
 ## [0.2.3] - 2026-10-24
 
 ### Added
