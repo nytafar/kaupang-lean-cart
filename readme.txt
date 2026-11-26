@@ -4,7 +4,7 @@ Tags: woocommerce, store-api, cart, mini-cart, developer-friendly
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 0.3.0
+Stable tag: 0.3.1
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -220,6 +220,12 @@ Create a PHP module class in `includes/modules/` that hooks into `kaupang/lean-c
 No screenshots. Lean Cart is a headless cart layer with no admin interface — all visual output is controlled by your theme.
 
 == Changelog ==
+
+= 0.3.1 – 2026-11-26 =
+
+**Added**
+* kaupang-subscriptions module: a line bought on a rhythm shows the badge and its cadence, a line that joins the customer's package says so ("Blir med i pakken din, annenhver levering"), and the line can be switched between one-time and the plan's rhythms (a `select.cart-item-plan` beside the badge, in the drawer and the checkout lines; the totals follow). The select is compact whatever size the theme gives form controls; where the browser has the customizable select (`appearance: base-select`) the closed box shows the chosen plan and the open list each plan with its price, elsewhere every option reads "Hver 4. uke · kr 269,10". Loaded only where kaupang-subscriptions is active and its storefront `enabled`.
+* Neutral line fields `subscriptionNote` and `planChoice` (options carrying the Store API extension update they send), beside `purchaseMode` and `subscriptionSummary`; the UI renders them for any engine. `store.updateExtension( namespace, data, { key, trigger } )` sends `POST cart/extensions` through the cart's queue (also on `window.leanCart.store`). While a line's update is in flight the line is `busy` and the store ignores its other changes, which would carry its old key.
 
 = 0.3.0 – 2026-11-26 =
 
